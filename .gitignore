@@ -8,5 +8,9 @@ Thumbs.db
 *.log
 .env
 *.env
+<<<<<<< HEAD
 backup/
+=======
+
+>>>>>>> origin/main
 __pycache__/
