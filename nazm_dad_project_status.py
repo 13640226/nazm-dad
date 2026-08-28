@@ -2,134 +2,68 @@
 # -*- coding: utf-8 -*-
 
 """
+Nazm Dad — Project Status & Documentation Tool
 نظم داد — ابزار وضعیت، اعتبارسنجی و مستندسازی پروژه
-نسخه: 2.3
 
-این ابزار وضعیت واقعی پروژه را از Git و فایل‌های محلی می‌خواند.
+Version: 2.5.1
 
-ویژگی‌ها:
-    - خواندن وضعیت واقعی Git
-    - نمایش branch، commit، tags و ahead/behind
-    - اعتبارسنجی اسناد اصلی پروژه
-    - تشخیص COMPLETE / PLACEHOLDER / INVALID / MISSING
-    - شمارش مواد قانون اساسی
-    - بررسی ۱۲ ماده مستقل افزوده‌شده در نسخه ۰.۵
-    - تولید STATUS.md
-    - تولید status.json
-    - تعیین مسیر خروجی با --output-dir
-    - حالت verbose برای نمایش مراحل اجرا
-    - نمایش تاریخچه tagها با --history
-    - مقایسه دو فایل با --diff
-    - بدون وابستگی خارجی
-
-نکته:
-    عملیات Git، اعتبارسنجی، history و diff فقط خواندنی هستند.
-    فقط --markdown و --json فایل خروجی ایجاد یا بازنویسی می‌کنند.
-
-نمونه‌ها:
-
-    python nazm_dad_project_status.py
-
-    python nazm_dad_project_status.py --check
-
-    python nazm_dad_project_status.py --validate-docs
-
-    python nazm_dad_project_status.py --validate-docs --verbose
-
-    python nazm_dad_project_status.py --history
-
-    python nazm_dad_project_status.py --history --verbose
-
-    python nazm_dad_project_status.py --diff docs/0.4.md docs/0.5.md
-
-    python nazm_dad_project_status.py \
-        --markdown \
-        --output-dir docs/status
-
-    python nazm_dad_project_status.py \
-        --json \
-        --output-dir docs/status \
-        --verbose
+ویژگی‌های نسخه 2.5.1
+-------------------
+- پشتیبانی کامل از فایل پیکربندی (.nazm-dad-config.json)
+- اولویت: CLI > config file > default
+- گزارش پیشرفت برای عملیات طولانی
+- خروجی HTML با escaping امن
+- خروجی Markdown
+- خروجی JSON
+- بررسی Git
+- بررسی اسناد
+- بررسی لینک‌ها و ارجاعات
+- تحلیل شماره‌گذاری و ترتیب مواد
+- استخراج آمار اسناد
+- Health Score
+- پشتیبانی از docs_path خارج از مخزن
+- پشتیبانی از health=None در HTML
+- جستجوی خودکار config کنار مخزن
 """
 
 from __future__ import annotations
 
 import argparse
 import difflib
+import html as html_lib
 import json
+import os
 import re
 import subprocess
 import sys
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 
 # ============================================================
-# Constants
+# Version
 # ============================================================
 
-VERSION = "2.3"
-
-DEFAULT_V04_ARTICLES = 61
-DEFAULT_V05_ARTICLES = 73
-DEFAULT_TOTAL_CHANGES = 21
-DEFAULT_NOOP_CHANGES = 2
+TOOL_VERSION = "2.5.1"
 
 
 # ============================================================
-# Terminal Colors
+# Exit Codes
 # ============================================================
 
-class Colors:
-    RESET = "\033[0m"
-    RED = "\033[91m"
-    GREEN = "\033[92m"
-    YELLOW = "\033[93m"
-    BLUE = "\033[94m"
-    CYAN = "\033[96m"
-    DIM = "\033[2m"
-
-
-def colorize(text: str, color: str, enabled: bool = True) -> str:
-    """
-    رنگ‌بندی ساده ANSI.
-
-    در صورت عدم پشتیبانی ترمینال، خروجی همچنان قابل خواندن است.
-    """
-    if not enabled:
-        return text
-
-    return f"{color}{text}{Colors.RESET}"
+class ExitCode(int, Enum):
+    OK = 0
+    VALIDATION_FAILED = 1
+    RUNTIME_ERROR = 2
+    USAGE_ERROR = 3
 
 
 # ============================================================
-# Verbose Logger
-# ============================================================
-
-class VerboseLogger:
-    """
-    ثبت مراحل اجرا در حالت --verbose.
-    """
-
-    def __init__(self, enabled: bool = False):
-        self.enabled = enabled
-
-    def log(self, message: str) -> None:
-        if self.enabled:
-            print(
-                colorize(
-                    f"[verbose] {message}",
-                    Colors.DIM,
-                )
-            )
-
-
-# ============================================================
-# Enums
+# Status Enums
 # ============================================================
 
 class DocumentStatus(str, Enum):
@@ -140,6 +74,180 @@ class DocumentStatus(str, Enum):
     MISSING = "وجود ندارد"
 
 
+class LinkStatus(str, Enum):
+    OK = "ok"
+    BROKEN = "broken"
+    SKIPPED = "skipped"
+
+
+# ============================================================
+# Configuration
+# ============================================================
+
+@dataclass
+class ProjectConfig:
+    repo_path: Optional[str] = None
+    output_dir: Optional[str] = None
+    docs_path: Optional[str] = None
+
+    expected_articles_v04: int = 61
+    expected_articles_v05: int = 73
+
+    expected_v05_additional: List[str] = field(
+        default_factory=lambda: [
+            "23-1",
+            "32-1",
+            "32-2",
+            "32-3",
+            "37-1",
+            "43-1",
+            "46-1",
+            "48-1",
+            "52-1",
+            "52-2",
+            "54-1",
+            "54-2",
+        ]
+    )
+
+    total_real_changes: int = 21
+    total_noop_changes: int = 2
+
+    health_threshold_ok: int = 90
+
+    @classmethod
+    def from_file(cls, path: Path) -> "ProjectConfig":
+        if not path.exists():
+            return cls()
+
+        try:
+            raw = path.read_text(encoding="utf-8")
+            data = json.loads(raw)
+
+            if not isinstance(data, dict):
+                raise TypeError(
+                    "ریشه فایل پیکربندی باید یک JSON object باشد."
+                )
+
+            valid_keys = set(cls.__dataclass_fields__.keys())
+
+            filtered_data = {
+                key: value
+                for key, value in data.items()
+                if key in valid_keys
+            }
+
+            return cls(**filtered_data)
+
+        except (json.JSONDecodeError, TypeError, OSError) as exc:
+            print(
+                f"⚠️ خطا در فایل پیکربندی '{path}':\n{exc}",
+                file=sys.stderr,
+            )
+            print(
+                "⚠️ استفاده از مقادیر پیش‌فرض.",
+                file=sys.stderr,
+            )
+            return cls()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            key: value
+            for key, value in asdict(self).items()
+            if value is not None
+        }
+
+
+# ============================================================
+# Progress Reporter
+# ============================================================
+
+class ProgressReporter:
+    def __init__(
+        self,
+        enabled: bool = True,
+        desc: str = "",
+        total: int = 0,
+    ):
+        self.enabled = enabled
+        self.desc = desc
+        self.total = total
+        self.current = 0
+        self._tqdm = None
+
+        if enabled and total > 0:
+            try:
+                from tqdm import tqdm
+
+                self._tqdm = tqdm(
+                    total=total,
+                    desc=desc,
+                    unit="item",
+                    ncols=80,
+                    bar_format=(
+                        "{l_bar}{bar}| "
+                        "{n_fmt}/{total_fmt} "
+                        "[{elapsed}<{remaining}]"
+                    ),
+                )
+
+            except ImportError:
+                self._tqdm = None
+                print(
+                    f"  {desc}: 0/{total}",
+                    end="",
+                )
+
+    def update(self, n: int = 1) -> None:
+        self.current += n
+
+        if self._tqdm:
+            self._tqdm.update(n)
+
+        elif self.enabled:
+            print(
+                f"\r  {self.desc}: "
+                f"{self.current}/{self.total}",
+                end="",
+            )
+
+    def close(self) -> None:
+        if self._tqdm:
+            self._tqdm.close()
+
+        elif self.enabled:
+            print()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.close()
+
+
+# ============================================================
+# Helpers
+# ============================================================
+
+def html_escape(value: Any) -> str:
+    return html_lib.escape(
+        str(value),
+        quote=True,
+    )
+
+
+def safe_display_path(
+    path: Path,
+    base: Path,
+) -> str:
+    try:
+        return str(
+            path.relative_to(base)
+        )
+    except ValueError:
+        return str(path)
+
+
 # ============================================================
 # Data Classes
 # ============================================================
@@ -148,48 +256,114 @@ class DocumentStatus(str, Enum):
 class GitInfo:
     branch: str
     is_clean: bool
-
     last_commit_hash: str
     last_commit_message: str
     last_commit_date: str
-
     tags: List[str]
-
     ahead: int
     behind: int
 
     upstream: Optional[str] = None
     remote: Optional[str] = None
-    repository_root: Optional[Path] = None
+    repository_root: Optional[str] = None
 
 
 @dataclass
-class TagInfo:
+class ArticleStats:
+    total_expected: int
+    total_detected: int
+    ids: List[str]
+    missing: List[str]
+    duplicates: List[str]
+    out_of_order: List[str]
+    has_continuity: bool
+
+
+@dataclass
+class DocumentStats:
     name: str
-    commit_hash: str
-    commit_date: str
-    subject: str
+    status: DocumentStatus
+    size_bytes: int
+    lines: int
+    characters: int
+    articles: ArticleStats
+    has_placeholder: bool
+    description: str
 
 
 @dataclass
 class DocumentInfo:
-    path: Path
+    path: str
     status: DocumentStatus
-
     size_bytes: int
+
     lines: int = 0
     characters: int = 0
 
     articles_count: Optional[int] = None
     detected_articles: Optional[int] = None
 
-    article_ids: List[str] = field(default_factory=list)
+    detected_article_ids: List[str] = field(
+        default_factory=list
+    )
+
+    missing_articles: List[str] = field(
+        default_factory=list
+    )
 
     description: str = ""
     is_placeholder: bool = False
 
-    duplicate_articles: List[str] = field(default_factory=list)
-    missing_additional: List[str] = field(default_factory=list)
+
+@dataclass
+class TagInfo:
+    name: str
+    commit: str
+    date: str
+    message: str
+    tagger: str = ""
+
+
+@dataclass
+class LinkIssue:
+    source: str
+    target: str
+    line: int
+    status: LinkStatus
+    description: str
+
+
+@dataclass
+class LinkReport:
+    checked: int = 0
+    valid: int = 0
+    broken: int = 0
+    skipped: int = 0
+
+    issues: List[LinkIssue] = field(
+        default_factory=list
+    )
+
+
+@dataclass
+class HealthComponent:
+    name: str
+    score: int
+    max_score: int
+    status: str
+    detail: str
+
+
+@dataclass
+class HealthReport:
+    score: int
+    max_score: int
+    percent: float
+    grade: str
+
+    components: List[HealthComponent] = field(
+        default_factory=list
+    )
 
 
 @dataclass
@@ -197,36 +371,133 @@ class ProjectStatus:
     git: GitInfo
     documents: Dict[str, DocumentInfo]
 
-    total_articles_v04: int = DEFAULT_V04_ARTICLES
-    total_articles_v05: int = DEFAULT_V05_ARTICLES
-
-    expected_v05_additional: Set[str] = field(default_factory=set)
-
-    total_changes: int = DEFAULT_TOTAL_CHANGES
-    noop_changes: int = DEFAULT_NOOP_CHANGES
-
-    timestamp: str = field(
-        default_factory=lambda: datetime.now().isoformat(
-            timespec="seconds"
-        )
+    document_stats: Dict[str, DocumentStats] = field(
+        default_factory=dict
     )
 
-    def __post_init__(self) -> None:
-        if not self.expected_v05_additional:
-            self.expected_v05_additional = {
-                "23-1",
-                "32-1",
-                "32-2",
-                "32-3",
-                "37-1",
-                "43-1",
-                "46-1",
-                "48-1",
-                "52-1",
-                "52-2",
-                "54-1",
-                "54-2",
-            }
+    total_articles_v04: int = 61
+    total_articles_v05: int = 73
+
+    expected_v05_additional: Set[str] = field(
+        default_factory=lambda: {
+            "23-1",
+            "32-1",
+            "32-2",
+            "32-3",
+            "37-1",
+            "43-1",
+            "46-1",
+            "48-1",
+            "52-1",
+            "52-2",
+            "54-1",
+            "54-2",
+        }
+    )
+
+    total_changes: int = 21
+    noop_changes: int = 2
+
+    tool_version: str = TOOL_VERSION
+
+    timestamp: str = field(
+        default_factory=lambda:
+        datetime.now().astimezone().isoformat()
+    )
+
+
+# ============================================================
+# Console
+# ============================================================
+
+class Console:
+    COLORS = {
+        "green": "\033[92m",
+        "red": "\033[91m",
+        "yellow": "\033[93m",
+        "blue": "\033[94m",
+        "cyan": "\033[96m",
+        "dim": "\033[2m",
+        "reset": "\033[0m",
+    }
+
+    def __init__(
+        self,
+        enable_color: bool = True,
+    ):
+        self.enable_color = (
+            enable_color
+            and sys.stdout.isatty()
+            and os.getenv("NO_COLOR") is None
+        )
+
+        if (
+            os.name == "nt"
+            and self.enable_color
+        ):
+            try:
+                os.system("")
+            except Exception:
+                pass
+
+    def color(
+        self,
+        text: str,
+        color: str,
+    ) -> str:
+        if not self.enable_color:
+            return text
+
+        return (
+            f"{self.COLORS.get(color, '')}"
+            f"{text}"
+            f"{self.COLORS['reset']}"
+        )
+
+    def success(self, text: str) -> str:
+        return self.color(
+            text,
+            "green",
+        )
+
+    def error(self, text: str) -> str:
+        return self.color(
+            text,
+            "red",
+        )
+
+    def warning(self, text: str) -> str:
+        return self.color(
+            text,
+            "yellow",
+        )
+
+    def info(self, text: str) -> str:
+        return self.color(
+            text,
+            "cyan",
+        )
+
+
+# ============================================================
+# Verbose Logger
+# ============================================================
+
+class VerboseLogger:
+    def __init__(
+        self,
+        enabled: bool = False,
+    ):
+        self.enabled = enabled
+
+    def log(
+        self,
+        message: str,
+    ) -> None:
+        if self.enabled:
+            print(
+                f"[verbose] {message}"
+            )
 
 
 # ============================================================
@@ -234,27 +505,25 @@ class ProjectStatus:
 # ============================================================
 
 class GitInfoCollector:
-    """
-    خواندن اطلاعات Git با subprocess.
-
-    این کلاس هیچ دستور تغییردهنده Git اجرا نمی‌کند.
-    """
-
     def __init__(
         self,
         repo_path: Path,
         logger: Optional[VerboseLogger] = None,
     ):
         self.repo_path = repo_path.resolve()
-        self.logger = logger or VerboseLogger(False)
+
+        self.logger = (
+            logger
+            or VerboseLogger(False)
+        )
 
     def _run_git(
         self,
-        args: List[str],
+        args: Sequence[str],
         check: bool = True,
     ) -> subprocess.CompletedProcess:
 
-        command = [
+        cmd = [
             "git",
             "-C",
             str(self.repo_path),
@@ -262,44 +531,40 @@ class GitInfoCollector:
         ]
 
         self.logger.log(
-            "Git: " + " ".join(command)
+            f"Git: {' '.join(cmd)}"
         )
 
         try:
-            result = subprocess.run(
-                command,
+            return subprocess.run(
+                cmd,
                 capture_output=True,
                 text=True,
-                check=check,
                 encoding="utf-8",
                 errors="replace",
+                check=check,
             )
-
-            return result
 
         except FileNotFoundError as exc:
             raise RuntimeError(
-                "Git روی سیستم پیدا نشد. "
-                "اطمینان حاصل کنید Git نصب شده و در PATH قرار دارد."
+                "Git روی سیستم پیدا نشد "
+                "یا در PATH قرار ندارد."
             ) from exc
 
         except subprocess.CalledProcessError as exc:
             if check:
-                stderr = exc.stderr or ""
+                stderr = (
+                    exc.stderr or ""
+                ).strip()
 
                 raise RuntimeError(
                     "Git command failed:\n"
-                    + " ".join(command)
-                    + "\n"
-                    + stderr
+                    f"{' '.join(cmd)}\n"
+                    f"{stderr}"
                 ) from exc
 
             return exc
 
-    def check_repository(self) -> bool:
-        """
-        بررسی اینکه مسیر یک مخزن Git معتبر است.
-        """
+    def check_repository(self) -> None:
         result = self._run_git(
             [
                 "rev-parse",
@@ -308,84 +573,140 @@ class GitInfoCollector:
             check=False,
         )
 
-        return (
-            result.returncode == 0
-            and result.stdout.strip().lower() == "true"
-        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"مسیر '{self.repo_path}' "
+                "مخزن Git معتبر نیست."
+            )
 
-    def get_repository_root(self) -> Path:
-        result = self._run_git(
+        if (
+            result.stdout
+            .strip()
+            .lower()
+            != "true"
+        ):
+            raise RuntimeError(
+                f"مسیر '{self.repo_path}' "
+                "داخل Git work tree نیست."
+            )
+
+    def get_repo_root(self) -> Path:
+        output = self._run_git(
             [
                 "rev-parse",
                 "--show-toplevel",
             ]
-        )
+        ).stdout.strip()
 
         return Path(
-            result.stdout.strip()
+            output
         ).resolve()
 
-    def get_info(self) -> GitInfo:
-        """
-        جمع‌آوری اطلاعات اصلی Git.
-        """
+    def get_upstream(
+        self,
+    ) -> Optional[str]:
 
-        if not self.check_repository():
-            raise RuntimeError(
-                f"مسیر زیر یک مخزن Git معتبر نیست:\n"
-                f"{self.repo_path}"
-            )
-
-        repository_root = self.get_repository_root()
-
-        self.logger.log(
-            f"Repository root: {repository_root}"
+        result = self._run_git(
+            [
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+            check=False,
         )
 
-        # ----------------------------------------------------
-        # Branch
-        # ----------------------------------------------------
+        if result.returncode != 0:
+            return None
 
-        branch_result = self._run_git(
+        value = result.stdout.strip()
+
+        return value or None
+
+    def get_ahead_behind(
+        self,
+        upstream: Optional[str],
+    ) -> Tuple[int, int]:
+
+        if not upstream:
+            return 0, 0
+
+        result = self._run_git(
+            [
+                "rev-list",
+                "--left-right",
+                "--count",
+                f"HEAD...{upstream}",
+            ],
+            check=False,
+        )
+
+        if result.returncode != 0:
+            return 0, 0
+
+        parts = (
+            result.stdout
+            .strip()
+            .split()
+        )
+
+        if len(parts) != 2:
+            return 0, 0
+
+        try:
+            ahead = int(parts[0])
+            behind = int(parts[1])
+
+            return ahead, behind
+
+        except ValueError:
+            return 0, 0
+
+    def get_info(
+        self,
+    ) -> GitInfo:
+
+        self.logger.log(
+            "Collecting Git information"
+        )
+
+        self.check_repository()
+
+        repo_root = self.get_repo_root()
+
+        self.logger.log(
+            f"Repository root: {repo_root}"
+        )
+
+        branch = self._run_git(
             [
                 "rev-parse",
                 "--abbrev-ref",
                 "HEAD",
             ]
-        )
+        ).stdout.strip()
 
-        branch = branch_result.stdout.strip()
-
-        # ----------------------------------------------------
-        # Working tree
-        # ----------------------------------------------------
-
-        status_result = self._run_git(
+        porcelain = self._run_git(
             [
                 "status",
                 "--porcelain",
             ]
-        )
+        ).stdout
 
-        is_clean = (
-            status_result.stdout.strip() == ""
-        )
-
-        # ----------------------------------------------------
-        # Last commit
-        # ----------------------------------------------------
-
-        commit_result = self._run_git(
-            [
-                "log",
-                "-1",
-                "--format=%H%n%s%n%ai",
-            ]
+        is_clean = not bool(
+            porcelain.strip()
         )
 
         commit_lines = (
-            commit_result.stdout
-            .strip()
+            self._run_git(
+                [
+                    "log",
+                    "-1",
+                    "--format=%H%n%s%n%ai",
+                ]
+            )
+            .stdout
+            .rstrip("\n")
             .splitlines()
         )
 
@@ -407,94 +728,28 @@ class GitInfoCollector:
             else ""
         )
 
-        # ----------------------------------------------------
-        # Tags
-        # ----------------------------------------------------
-
-        tags_result = self._run_git(
+        tags_output = self._run_git(
             [
                 "tag",
                 "--list",
                 "--sort=-creatordate",
             ]
-        )
+        ).stdout
 
         tags = [
             line.strip()
-            for line in (
-                tags_result.stdout
-                .splitlines()
-            )
+            for line
+            in tags_output.splitlines()
             if line.strip()
         ]
 
-        # ----------------------------------------------------
-        # Upstream
-        # ----------------------------------------------------
+        upstream = self.get_upstream()
 
-        upstream = None
-
-        upstream_result = self._run_git(
-            [
-                "rev-parse",
-                "--abbrev-ref",
-                "--symbolic-full-name",
-                "@{upstream}",
-            ],
-            check=False,
+        ahead, behind = (
+            self.get_ahead_behind(
+                upstream
+            )
         )
-
-        if (
-            upstream_result.returncode == 0
-            and upstream_result.stdout.strip()
-        ):
-            upstream = (
-                upstream_result.stdout.strip()
-            )
-
-        # ----------------------------------------------------
-        # Ahead / Behind
-        # ----------------------------------------------------
-
-        ahead = 0
-        behind = 0
-
-        if upstream:
-
-            relation_result = self._run_git(
-                [
-                    "rev-list",
-                    "--left-right",
-                    "--count",
-                    f"HEAD...{upstream}",
-                ],
-                check=False,
-            )
-
-            if (
-                relation_result.returncode == 0
-                and relation_result.stdout.strip()
-            ):
-
-                parts = (
-                    relation_result.stdout
-                    .strip()
-                    .split()
-                )
-
-                if len(parts) == 2:
-                    try:
-                        ahead = int(parts[0])
-                        behind = int(parts[1])
-                    except ValueError:
-                        ahead = 0
-                        behind = 0
-
-        # ----------------------------------------------------
-        # Remote
-        # ----------------------------------------------------
-
-        remote = None
 
         remote_result = self._run_git(
             [
@@ -505,170 +760,136 @@ class GitInfoCollector:
             check=False,
         )
 
-        if (
-            remote_result.returncode == 0
-            and remote_result.stdout.strip()
-        ):
-            remote = (
-                remote_result.stdout.strip()
-            )
+        remote = (
+            remote_result.stdout.strip()
+            if remote_result.returncode == 0
+            else None
+        )
 
         return GitInfo(
             branch=branch,
             is_clean=is_clean,
-
             last_commit_hash=(
                 commit_hash[:8]
-                if commit_hash
-                else ""
             ),
-
-            last_commit_message=commit_message,
-            last_commit_date=commit_date,
-
+            last_commit_message=(
+                commit_message
+            ),
+            last_commit_date=(
+                commit_date
+            ),
             tags=tags,
-
             ahead=ahead,
             behind=behind,
-
             upstream=upstream,
-            remote=remote,
-
-            repository_root=repository_root,
+            remote=remote or None,
+            repository_root=str(
+                repo_root
+            ),
         )
 
-    def get_tag_history(self) -> List[TagInfo]:
-        """
-        دریافت tagها و commit مرتبط با هر tag.
-        """
+    def get_tags_history(
+        self,
+    ) -> List[TagInfo]:
 
-        if not self.check_repository():
-            raise RuntimeError(
-                f"مسیر زیر یک مخزن Git معتبر نیست:\n"
-                f"{self.repo_path}"
+        self.check_repository()
+
+        tags = (
+            self._run_git(
+                [
+                    "tag",
+                    "--list",
+                    "--sort=-creatordate",
+                ]
             )
-
-        self.logger.log(
-            "Reading tag history"
+            .stdout
+            .splitlines()
         )
 
-        result = self._run_git(
-            [
-                "for-each-ref",
-                "--sort=-creatordate",
-                "--format=%(refname:short)|%(objectname:short)|%(creatordate:iso8601)|%(subject)",
-                "refs/tags",
-            ]
-        )
+        results: List[
+            TagInfo
+        ] = []
 
-        history: List[TagInfo] = []
+        for tag in tags:
+            tag = tag.strip()
 
-        for raw_line in result.stdout.splitlines():
-
-            line = raw_line.strip()
-
-            if not line:
+            if not tag:
                 continue
 
-            parts = line.split(
-                "|",
-                3,
-            )
-
-            name = (
-                parts[0]
-                if len(parts) > 0
-                else ""
-            )
-
-            commit_hash = (
-                parts[1]
-                if len(parts) > 1
-                else ""
-            )
-
-            commit_date = (
-                parts[2]
-                if len(parts) > 2
-                else ""
-            )
-
-            subject = (
-                parts[3]
-                if len(parts) > 3
-                else ""
-            )
-
-            # annotated tag ممکن است object خود tag را بدهد.
-            # commit واقعی resolve می‌شود.
-            resolved_result = self._run_git(
+            commit = self._run_git(
                 [
                     "rev-list",
                     "-n",
                     "1",
-                    name,
+                    tag,
                 ],
                 check=False,
-            )
+            ).stdout.strip()
 
-            if (
-                resolved_result.returncode == 0
-                and resolved_result.stdout.strip()
-            ):
-
-                resolved_hash = (
-                    resolved_result.stdout
-                    .strip()[:8]
-                )
-
-                commit_info = self._run_git(
+            log_output = (
+                self._run_git(
                     [
-                        "show",
-                        "-s",
-                        "--format=%ai|%s",
-                        name,
+                        "log",
+                        "-1",
+                        "--format=%h%n%ai%n%s",
+                        commit or tag,
                     ],
                     check=False,
                 )
+                .stdout
+                .splitlines()
+            )
 
-                if (
-                    commit_info.returncode == 0
-                    and commit_info.stdout.strip()
-                ):
+            commit_short = (
+                log_output[0]
+                if len(log_output) > 0
+                else commit[:8]
+            )
 
-                    info_parts = (
-                        commit_info.stdout
-                        .strip()
-                        .split(
-                            "|",
-                            1,
-                        )
-                    )
+            date = (
+                log_output[1]
+                if len(log_output) > 1
+                else ""
+            )
 
-                    if len(info_parts) > 0:
-                        commit_date = (
-                            info_parts[0]
-                        )
+            message = (
+                log_output[2]
+                if len(log_output) > 2
+                else ""
+            )
 
-                    if len(info_parts) > 1:
-                        subject = (
-                            info_parts[1]
-                        )
-
-                commit_hash = (
-                    resolved_hash
-                )
-
-            history.append(
-                TagInfo(
-                    name=name,
-                    commit_hash=commit_hash,
-                    commit_date=commit_date,
-                    subject=subject,
+            tagger_result = (
+                self._run_git(
+                    [
+                        "for-each-ref",
+                        f"refs/tags/{tag}",
+                        (
+                            "--format="
+                            "%(taggername) "
+                            "<%(taggeremail)>"
+                        ),
+                    ],
+                    check=False,
                 )
             )
 
-        return history
+            tagger = (
+                tagger_result
+                .stdout
+                .strip()
+            )
+
+            results.append(
+                TagInfo(
+                    name=tag,
+                    commit=commit_short,
+                    date=date,
+                    message=message,
+                    tagger=tagger,
+                )
+            )
+
+        return results
 
 
 # ============================================================
@@ -676,10 +897,6 @@ class GitInfoCollector:
 # ============================================================
 
 class DocumentValidator:
-    """
-    اعتبارسنجی اسناد پروژه.
-    """
-
     ARTICLE_PATTERN = re.compile(
         r"^\s*\*\*ماده\s+"
         r"([۰-۹0-9]+(?:[–—\-][۰-۹0-9]+)?)"
@@ -687,194 +904,343 @@ class DocumentValidator:
         re.MULTILINE,
     )
 
-    EXPECTED_V05_ADDITIONAL = {
-        "23-1",
-        "32-1",
-        "32-2",
-        "32-3",
-        "37-1",
-        "43-1",
-        "46-1",
-        "48-1",
-        "52-1",
-        "52-2",
-        "54-1",
-        "54-2",
-    }
-
-    EXPECTED_DOCS = {
-
-        "0.4.md": {
-            "min_size": 5000,
-
-            "expected_start":
-                "# قانون اساسی «نظم داد» – نسخه ۰.۴ نهایی",
-
-            "articles":
-                DEFAULT_V04_ARTICLES,
-
-            "additional_articles":
-                set(),
-        },
-
-        "0.5.md": {
-            "min_size": 5000,
-
-            "expected_start":
-                "# قانون اساسی «نظم داد» – نسخه ۰.۵ نهایی",
-
-            "articles":
-                DEFAULT_V05_ARTICLES,
-
-            "additional_articles":
-                EXPECTED_V05_ADDITIONAL,
-        },
-
-        "changelog.md": {
-            "min_size": 500,
-
-            "expected_start":
-                None,
-
-            "articles":
-                None,
-
-            "additional_articles":
-                set(),
-        },
-
-        "rules.md": {
-            "min_size": 100,
-
-            "expected_start":
-                None,
-
-            "articles":
-                None,
-
-            "additional_articles":
-                set(),
-        },
-
-        "decisions.md": {
-            "min_size": 100,
-
-            "expected_start":
-                None,
-
-            "articles":
-                None,
-
-            "additional_articles":
-                set(),
-        },
-
-    }
-
     PLACEHOLDER_MARKERS = (
         "placeholder",
         "در انتظار درج متن",
-        "در انتظار جایگزینی",
-        "لطفاً کل متن",
+        "در انتظار محتوای نهایی",
         "به‌زودی",
-        "[اینجا کل متن",
     )
 
     def __init__(
         self,
         docs_path: Path,
         logger: Optional[VerboseLogger] = None,
+        config: Optional[ProjectConfig] = None,
     ):
-        self.docs_path = docs_path.resolve()
-        self.logger = logger or VerboseLogger(False)
+        self.docs_path = (
+            docs_path.resolve()
+        )
+
+        self.logger = (
+            logger
+            or VerboseLogger(False)
+        )
+
+        self.config = (
+            config
+            or ProjectConfig()
+        )
 
     @staticmethod
     def normalize_digits(
         value: str,
     ) -> str:
-        """
-        تبدیل ارقام فارسی و عربی به لاتین.
-        """
 
-        translation = str.maketrans(
-            "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
-            "01234567890123456789",
+        translation = (
+            str.maketrans(
+                "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+                "01234567890123456789",
+            )
         )
 
         return value.translate(
             translation
         )
 
+    @classmethod
+    def normalize_article_id(
+        cls,
+        value: str,
+    ) -> str:
+
+        value = (
+            cls.normalize_digits(
+                value
+            )
+        )
+
+        value = (
+            value
+            .replace("–", "-")
+            .replace("—", "-")
+            .replace("−", "-")
+        )
+
+        return value.strip()
+
     def find_articles(
         self,
         content: str,
     ) -> List[str]:
 
-        articles: List[str] = []
+        result: List[
+            str
+        ] = []
 
         for match in (
             self.ARTICLE_PATTERN
             .finditer(content)
         ):
-
-            article_id = (
-                self.normalize_digits(
+            result.append(
+                self.normalize_article_id(
                     match.group(1)
                 )
             )
 
-            article_id = (
-                article_id
-                .replace("–", "-")
-                .replace("—", "-")
-            )
-
-            articles.append(
-                article_id
-            )
-
-        return articles
+        return result
 
     @staticmethod
     def find_duplicates(
-        values: List[str],
+        items: Iterable[str],
     ) -> List[str]:
 
         seen: Set[str] = set()
         duplicates: Set[str] = set()
 
-        for value in values:
+        for item in items:
+            if item in seen:
+                duplicates.add(item)
 
-            if value in seen:
-                duplicates.add(
-                    value
-                )
-
-            seen.add(
-                value
-            )
+            seen.add(item)
 
         return sorted(
             duplicates
         )
 
-    def validate_all(
+    def extract_article_stats(
         self,
-    ) -> Dict[str, DocumentInfo]:
+        content: str,
+        expected_count: Optional[int] = None,
+        expected_ids: Optional[Set[str]] = None,
+    ) -> ArticleStats:
 
-        self.logger.log(
-            f"Validating documents in {self.docs_path}"
+        ids = self.find_articles(
+            content
         )
 
-        results: Dict[
+        total_detected = len(
+            ids
+        )
+
+        duplicates = (
+            self.find_duplicates(
+                ids
+            )
+        )
+
+        missing: List[
+            str
+        ] = []
+
+        if expected_ids:
+            found_set = set(
+                ids
+            )
+
+            missing = sorted(
+                expected_ids
+                - found_set
+            )
+
+        out_of_order: List[
+            str
+        ] = []
+
+        if ids:
+            numeric_ids: List[
+                int
+            ] = []
+
+            for article_id in ids:
+                try:
+                    base = (
+                        article_id
+                        .split("-")[0]
+                    )
+
+                    numeric_ids.append(
+                        int(base)
+                    )
+
+                except ValueError:
+                    numeric_ids.append(
+                        -1
+                    )
+
+            for index in range(
+                1,
+                len(numeric_ids),
+            ):
+                if (
+                    numeric_ids[index]
+                    < numeric_ids[index - 1]
+                    and numeric_ids[index] != -1
+                ):
+                    out_of_order.append(
+                        ids[index]
+                    )
+
+        has_continuity = True
+
+        if (
+            ids
+            and len(ids) > 1
+        ):
+            numeric_values: List[
+                int
+            ] = []
+
+            for article_id in ids:
+                try:
+                    base = (
+                        article_id
+                        .split("-")[0]
+                    )
+
+                    numeric_values.append(
+                        int(base)
+                    )
+
+                except ValueError:
+                    numeric_values.append(
+                        -1
+                    )
+
+            valid_numerics = [
+                number
+                for number
+                in numeric_values
+                if number >= 0
+            ]
+
+            if valid_numerics:
+                min_value = min(
+                    valid_numerics
+                )
+
+                max_value = max(
+                    valid_numerics
+                )
+
+                expected_range = set(
+                    range(
+                        min_value,
+                        max_value + 1,
+                    )
+                )
+
+                actual_set = set(
+                    valid_numerics
+                )
+
+                has_continuity = (
+                    expected_range
+                    == actual_set
+                )
+
+        return ArticleStats(
+            total_expected=(
+                expected_count
+                or 0
+            ),
+            total_detected=(
+                total_detected
+            ),
+            ids=ids,
+            missing=missing,
+            duplicates=duplicates,
+            out_of_order=out_of_order,
+            has_continuity=(
+                has_continuity
+            ),
+        )
+
+    def _get_doc_specs(
+        self,
+    ) -> Dict[
+        str,
+        Dict,
+    ]:
+
+        return {
+            "0.4.md": {
+                "min_size": 5000,
+                "expected_start": (
+                    "# قانون اساسی "
+                    "«نظم داد» – "
+                    "نسخه ۰.۴ نهایی"
+                ),
+                "articles": (
+                    self.config
+                    .expected_articles_v04
+                ),
+                "additional_articles": set(),
+            },
+
+            "0.5.md": {
+                "min_size": 5000,
+                "expected_start": (
+                    "# قانون اساسی "
+                    "«نظم داد» – "
+                    "نسخه ۰.۵ نهایی"
+                ),
+                "articles": (
+                    self.config
+                    .expected_articles_v05
+                ),
+                "additional_articles": set(
+                    self.config
+                    .expected_v05_additional
+                ),
+            },
+
+            "changelog.md": {
+                "min_size": 1000,
+                "expected_start": None,
+                "articles": None,
+                "additional_articles": set(),
+            },
+
+            "rules.md": {
+                "min_size": 500,
+                "expected_start": None,
+                "articles": None,
+                "additional_articles": set(),
+            },
+
+            "decisions.md": {
+                "min_size": 500,
+                "expected_start": None,
+                "articles": None,
+                "additional_articles": set(),
+            },
+        }
+
+    def validate_all(
+        self,
+    ) -> Dict[
+        str,
+        DocumentInfo,
+    ]:
+
+        self.logger.log(
+            "Validating documents in "
+            f"{self.docs_path}"
+        )
+
+        result: Dict[
             str,
-            DocumentInfo
+            DocumentInfo,
         ] = {}
+
+        docs_spec = (
+            self._get_doc_specs()
+        )
 
         for (
             filename,
             spec,
-        ) in self.EXPECTED_DOCS.items():
+        ) in docs_spec.items():
 
             file_path = (
                 self.docs_path
@@ -885,229 +1251,181 @@ class DocumentValidator:
                 f"Validating {file_path}"
             )
 
-            results[filename] = (
-                self._validate_single(
-                    file_path,
-                    spec,
-                    filename,
-                )
+            result[
+                filename
+            ] = self.validate_single(
+                file_path=file_path,
+                spec=spec,
+                filename=filename,
             )
 
-        return results
+        return result
 
-    def _validate_single(
+    def validate_single(
         self,
         file_path: Path,
         spec: Dict,
         filename: str,
     ) -> DocumentInfo:
 
-        # ----------------------------------------------------
-        # Missing
-        # ----------------------------------------------------
-
         if not file_path.exists():
-
             return DocumentInfo(
-                path=file_path,
-
+                path=str(file_path),
                 status=(
                     DocumentStatus.MISSING
                 ),
-
                 size_bytes=0,
-
                 description=(
-                    f"فایل {filename} وجود ندارد."
+                    f"فایل {filename} "
+                    "وجود ندارد."
                 ),
             )
-
-        if not file_path.is_file():
-
-            return DocumentInfo(
-                path=file_path,
-
-                status=(
-                    DocumentStatus.INVALID
-                ),
-
-                size_bytes=0,
-
-                description=(
-                    f"{filename} فایل عادی نیست."
-                ),
-            )
-
-        # ----------------------------------------------------
-        # Read UTF-8
-        # ----------------------------------------------------
 
         try:
-
-            content = file_path.read_text(
-                encoding="utf-8"
+            content = (
+                file_path
+                .read_text(
+                    encoding="utf-8"
+                )
             )
 
         except UnicodeDecodeError as exc:
-
             return DocumentInfo(
-                path=file_path,
-
+                path=str(file_path),
                 status=(
                     DocumentStatus.INVALID
                 ),
-
                 size_bytes=(
-                    file_path.stat().st_size
+                    file_path
+                    .stat()
+                    .st_size
                 ),
-
                 description=(
-                    "فایل UTF-8 معتبر نیست: "
+                    f"UTF-8 نامعتبر: "
                     f"{exc}"
                 ),
             )
 
         except OSError as exc:
-
             return DocumentInfo(
-                path=file_path,
-
+                path=str(file_path),
                 status=(
                     DocumentStatus.INVALID
                 ),
-
                 size_bytes=0,
-
                 description=(
-                    "خطا هنگام خواندن فایل: "
+                    "خطا در خواندن فایل: "
                     f"{exc}"
                 ),
             )
 
-        # ----------------------------------------------------
-        # Metrics
-        # ----------------------------------------------------
-
         size_bytes = (
-            file_path.stat().st_size
+            file_path
+            .stat()
+            .st_size
+        )
+
+        lines = len(
+            content.splitlines()
         )
 
         characters = len(
             content
         )
 
-        lines = (
-            content.count("\n") + 1
-            if content
-            else 0
-        )
-
-        # ----------------------------------------------------
-        # Placeholder
-        # ----------------------------------------------------
-
         lowered = (
             content.lower()
         )
 
-        marker_found = any(
-            marker.lower() in lowered
-            for marker
-            in self.PLACEHOLDER_MARKERS
-        )
-
-        min_size = spec.get(
-            "min_size",
-            100,
-        )
-
         is_placeholder = (
-            marker_found
-            or size_bytes < min_size
+            any(
+                marker.lower()
+                in lowered
+                for marker
+                in self.PLACEHOLDER_MARKERS
+            )
+            or size_bytes
+            < spec.get(
+                "min_size",
+                0,
+            )
         )
 
-        # ----------------------------------------------------
-        # Heading
-        # ----------------------------------------------------
-
-        expected_start = spec.get(
-            "expected_start"
+        expected_start = (
+            spec.get(
+                "expected_start"
+            )
         )
 
         start_ok = True
 
         if expected_start:
-
-            normalized_content = (
-                content
-                .lstrip("\ufeff")
-                .strip()
-            )
-
             start_ok = (
-                normalized_content
+                content
+                .lstrip(
+                    "\ufeff \t\r\n"
+                )
                 .startswith(
                     expected_start
                 )
             )
 
-        # ----------------------------------------------------
-        # Articles
-        # ----------------------------------------------------
-
-        expected_articles = spec.get(
-            "articles"
+        expected_articles = (
+            spec.get(
+                "articles"
+            )
         )
 
-        article_ids: List[str] = []
-        detected_articles = None
-        articles_ok = True
+        detected_ids: List[
+            str
+        ] = []
 
-        duplicate_articles: List[str] = []
+        detected_count: Optional[
+            int
+        ] = None
+
+        article_count_ok = True
+
+        duplicates: List[
+            str
+        ] = []
 
         if expected_articles is not None:
-
-            article_ids = (
+            detected_ids = (
                 self.find_articles(
                     content
                 )
             )
 
-            detected_articles = len(
-                article_ids
+            detected_count = len(
+                detected_ids
             )
 
-            duplicate_articles = (
+            article_count_ok = (
+                detected_count
+                == expected_articles
+            )
+
+            duplicates = (
                 self.find_duplicates(
-                    article_ids
+                    detected_ids
                 )
             )
 
-            articles_ok = (
-                detected_articles
-                == expected_articles
-                and not duplicate_articles
-            )
-
-        # ----------------------------------------------------
-        # Additional Articles
-        # ----------------------------------------------------
-
-        expected_additional = (
+        expected_additional = set(
             spec.get(
-                "additional_articles"
+                "additional_articles",
+                set(),
             )
-            or set()
         )
 
-        missing_additional: List[str] = []
-
-        additional_ok = True
+        missing_additional: List[
+            str
+        ] = []
 
         if expected_additional:
-
             found_set = set(
-                article_ids
+                detected_ids
             )
 
             missing_additional = sorted(
@@ -1115,186 +1433,521 @@ class DocumentValidator:
                 - found_set
             )
 
-            additional_ok = (
-                not missing_additional
-            )
-
-        # ----------------------------------------------------
-        # Changelog sanity
-        # ----------------------------------------------------
-
-        changelog_ok = True
-
-        if filename == "changelog.md":
-
-            required_fragments = [
-                "۰.۴",
-                "۰.۵",
-            ]
-
-            changelog_ok = all(
-                fragment in content
-                for fragment
-                in required_fragments
-            )
-
-        # ----------------------------------------------------
-        # Diagnostics
-        # ----------------------------------------------------
-
-        details: List[str] = [
-            f"size={size_bytes} bytes",
-            f"lines={lines}",
-        ]
+        problems: List[
+            str
+        ] = []
 
         if not start_ok:
-            details.append(
-                "شروع متن با انتظار مطابقت ندارد"
+            problems.append(
+                "شروع متن با ساختار "
+                "مورد انتظار مطابقت ندارد"
             )
 
-        if (
-            expected_articles is not None
-            and detected_articles
-            != expected_articles
-        ):
-
-            details.append(
-                f"مواد={detected_articles}/{expected_articles}"
-            )
-
-        if duplicate_articles:
-
-            details.append(
-                "مواد تکراری: "
-                + ", ".join(
-                    duplicate_articles
-                )
+        if not article_count_ok:
+            problems.append(
+                "مواد تشخیص‌داده‌شده: "
+                f"{detected_count}/"
+                f"{expected_articles}"
             )
 
         if missing_additional:
-
-            details.append(
+            problems.append(
                 "مواد الحاقی مفقود: "
                 + ", ".join(
                     missing_additional
                 )
             )
 
-        if not changelog_ok:
-
-            details.append(
-                "changelog شامل ارجاع لازم "
-                "به نسخه‌های ۰.۴ و ۰.۵ نیست"
+        if duplicates:
+            problems.append(
+                "شناسه مواد تکراری: "
+                + ", ".join(
+                    duplicates
+                )
             )
 
-        # ----------------------------------------------------
-        # Status
-        # ----------------------------------------------------
-
         if is_placeholder:
-
             status = (
                 DocumentStatus.PLACEHOLDER
             )
 
-            description = (
-                " | ".join(details)
-            )
-
-        elif (
-            not start_ok
-            or not articles_ok
-            or not additional_ok
-            or not changelog_ok
-        ):
-
+        elif problems:
             status = (
                 DocumentStatus.INVALID
             )
 
-            description = (
-                " | ".join(details)
-            )
-
         else:
-
             status = (
                 DocumentStatus.COMPLETE
             )
 
+        if (
+            status
+            == DocumentStatus.COMPLETE
+        ):
             description = (
                 "فایل معتبر است."
             )
 
+        else:
+            description = (
+                f"size={size_bytes} bytes"
+                f" | lines={lines}"
+            )
+
+            if problems:
+                description += (
+                    " | "
+                    + " | ".join(
+                        problems
+                    )
+                )
+
         return DocumentInfo(
-            path=file_path,
-
+            path=str(file_path),
             status=status,
-
             size_bytes=size_bytes,
             lines=lines,
             characters=characters,
-
             articles_count=(
                 expected_articles
             ),
-
             detected_articles=(
-                detected_articles
+                detected_count
             ),
-
-            article_ids=(
-                article_ids
+            detected_article_ids=(
+                detected_ids
             ),
-
+            missing_articles=(
+                missing_additional
+            ),
             description=(
                 description
             ),
-
             is_placeholder=(
                 is_placeholder
-            ),
-
-            duplicate_articles=(
-                duplicate_articles
-            ),
-
-            missing_additional=(
-                missing_additional
             ),
         )
 
 
 # ============================================================
-# Project Builder
+# Link Checker
 # ============================================================
 
-class ProjectStatusBuilder:
+class LinkChecker:
+    MARKDOWN_LINK_PATTERN = re.compile(
+        r"\[[^\]]+\]\(([^)]+)\)"
+    )
+
+    ARTICLE_REFERENCE_PATTERN = re.compile(
+        r"ماده(?:ٔ|\s)+\s*"
+        r"([۰-۹0-9]+"
+        r"(?:[–—\-][۰-۹0-9]+)?)"
+    )
 
     def __init__(
         self,
         repo_path: Path,
+        docs_path: Path,
+        validator: DocumentValidator,
         logger: Optional[VerboseLogger] = None,
+        progress_enabled: bool = True,
     ):
-        self.repo_path = repo_path.resolve()
+        self.repo_path = (
+            repo_path.resolve()
+        )
+
+        self.docs_path = (
+            docs_path.resolve()
+        )
+
+        self.validator = validator
 
         self.logger = (
             logger
             or VerboseLogger(False)
         )
 
-        self.git_collector = (
-            GitInfoCollector(
-                self.repo_path,
-                logger=self.logger,
+        self.progress_enabled = (
+            progress_enabled
+        )
+
+    @staticmethod
+    def _is_external(
+        target: str,
+    ) -> bool:
+
+        lower = (
+            target
+            .lower()
+            .strip()
+        )
+
+        return lower.startswith(
+            (
+                "http://",
+                "https://",
+                "mailto:",
+                "tel:",
+                "#",
             )
         )
 
-        self.document_validator = (
+    @staticmethod
+    def _strip_anchor(
+        target: str,
+    ) -> str:
+
+        return target.split(
+            "#",
+            1,
+        )[0]
+
+    def check_markdown_links(
+        self,
+        file_path: Path,
+    ) -> List[LinkIssue]:
+
+        issues: List[
+            LinkIssue
+        ] = []
+
+        try:
+            lines = (
+                file_path
+                .read_text(
+                    encoding="utf-8"
+                )
+                .splitlines()
+            )
+
+        except (
+            UnicodeDecodeError,
+            OSError,
+        ):
+            return issues
+
+        for (
+            line_number,
+            line,
+        ) in enumerate(
+            lines,
+            start=1,
+        ):
+
+            for match in (
+                self
+                .MARKDOWN_LINK_PATTERN
+                .finditer(line)
+            ):
+                target = (
+                    match
+                    .group(1)
+                    .strip()
+                )
+
+                if self._is_external(
+                    target
+                ):
+                    continue
+
+                clean_target = (
+                    self._strip_anchor(
+                        target
+                    )
+                )
+
+                if not clean_target:
+                    continue
+
+                resolved = (
+                    file_path.parent
+                    / clean_target
+                ).resolve()
+
+                if not resolved.exists():
+                    issues.append(
+                        LinkIssue(
+                            source=(
+                                safe_display_path(
+                                    file_path,
+                                    self.repo_path,
+                                )
+                            ),
+                            target=target,
+                            line=line_number,
+                            status=(
+                                LinkStatus.BROKEN
+                            ),
+                            description=(
+                                "فایل مقصد لینک "
+                                "وجود ندارد"
+                            ),
+                        )
+                    )
+
+        return issues
+
+    def check_article_references(
+        self,
+        file_path: Path,
+    ) -> List[LinkIssue]:
+
+        issues: List[
+            LinkIssue
+        ] = []
+
+        try:
+            content = (
+                file_path
+                .read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        except (
+            UnicodeDecodeError,
+            OSError,
+        ):
+            return issues
+
+        article_ids = set(
+            self.validator
+            .find_articles(
+                content
+            )
+        )
+
+        if not article_ids:
+            return issues
+
+        lines = (
+            content.splitlines()
+        )
+
+        for (
+            line_number,
+            line,
+        ) in enumerate(
+            lines,
+            start=1,
+        ):
+
+            for match in (
+                self
+                .ARTICLE_REFERENCE_PATTERN
+                .finditer(line)
+            ):
+
+                article_id = (
+                    self.validator
+                    .normalize_article_id(
+                        match.group(1)
+                    )
+                )
+
+                if article_id not in article_ids:
+                    issues.append(
+                        LinkIssue(
+                            source=(
+                                safe_display_path(
+                                    file_path,
+                                    self.repo_path,
+                                )
+                            ),
+                            target=(
+                                f"ماده "
+                                f"{article_id}"
+                            ),
+                            line=line_number,
+                            status=(
+                                LinkStatus.BROKEN
+                            ),
+                            description=(
+                                "ارجاع به ماده‌ای که "
+                                "در همین نسخه "
+                                "شناسایی نشد"
+                            ),
+                        )
+                    )
+
+        return issues
+
+    def run(
+        self,
+    ) -> LinkReport:
+
+        self.logger.log(
+            "Checking local links "
+            "and references"
+        )
+
+        report = (
+            LinkReport()
+        )
+
+        if not self.docs_path.exists():
+            return report
+
+        markdown_files = sorted(
+            self.docs_path
+            .rglob("*.md")
+        )
+
+        total = (
+            len(markdown_files)
+            + 2
+        )
+
+        with ProgressReporter(
+            enabled=(
+                self.progress_enabled
+            ),
+            desc="Checking links",
+            total=total,
+        ) as progress:
+
+            for file_path in (
+                markdown_files
+            ):
+                markdown_issues = (
+                    self
+                    .check_markdown_links(
+                        file_path
+                    )
+                )
+
+                report.checked += 1
+
+                if markdown_issues:
+                    report.broken += len(
+                        markdown_issues
+                    )
+
+                    report.issues.extend(
+                        markdown_issues
+                    )
+
+                else:
+                    report.valid += 1
+
+                progress.update()
+
+            for filename in (
+                "0.4.md",
+                "0.5.md",
+            ):
+                file_path = (
+                    self.docs_path
+                    / filename
+                )
+
+                if not file_path.exists():
+                    progress.update()
+                    continue
+
+                article_issues = (
+                    self
+                    .check_article_references(
+                        file_path
+                    )
+                )
+
+                report.checked += 1
+
+                if article_issues:
+                    report.broken += len(
+                        article_issues
+                    )
+
+                    report.issues.extend(
+                        article_issues
+                    )
+
+                else:
+                    report.valid += 1
+
+                progress.update()
+
+        return report
+
+
+# ============================================================
+# Project Status Builder
+# ============================================================
+
+class ProjectStatusBuilder:
+    def __init__(
+        self,
+        repo_path: Path,
+        logger: Optional[VerboseLogger] = None,
+        config: Optional[ProjectConfig] = None,
+        progress_enabled: bool = True,
+    ):
+        self.logger = (
+            logger
+            or VerboseLogger(False)
+        )
+
+        self.config = (
+            config
+            or ProjectConfig()
+        )
+
+        self.progress_enabled = (
+            progress_enabled
+        )
+
+        initial_path = (
+            repo_path.resolve()
+        )
+
+        collector = (
+            GitInfoCollector(
+                initial_path,
+                self.logger,
+            )
+        )
+
+        collector.check_repository()
+
+        self.repo_path = (
+            collector.get_repo_root()
+        )
+
+        self.git_collector = (
+            GitInfoCollector(
+                self.repo_path,
+                self.logger,
+            )
+        )
+
+        docs_path = (
+            self.repo_path
+            / "docs"
+        )
+
+        if self.config.docs_path:
+            config_docs = Path(
+                self.config.docs_path
+            )
+
+            if config_docs.is_absolute():
+                docs_path = (
+                    config_docs
+                )
+
+            else:
+                docs_path = (
+                    self.repo_path
+                    / config_docs
+                )
+
+        self.doc_validator = (
             DocumentValidator(
-                self.repo_path
-                / "docs",
-                logger=self.logger,
+                docs_path,
+                self.logger,
+                self.config,
             )
         )
 
@@ -1302,116 +1955,514 @@ class ProjectStatusBuilder:
         self,
     ) -> ProjectStatus:
 
-        self.logger.log(
-            "Collecting Git information"
-        )
-
-        git_info = (
+        git = (
             self.git_collector
             .get_info()
         )
 
-        self.logger.log(
-            "Validating documents"
-        )
-
         documents = (
-            self.document_validator
+            self.doc_validator
             .validate_all()
         )
 
+        document_stats = (
+            self._extract_stats(
+                documents
+            )
+        )
+
         return ProjectStatus(
-            git=git_info,
-
+            git=git,
             documents=documents,
-
+            document_stats=(
+                document_stats
+            ),
             total_articles_v04=(
-                DEFAULT_V04_ARTICLES
+                self.config
+                .expected_articles_v04
             ),
-
             total_articles_v05=(
-                DEFAULT_V05_ARTICLES
+                self.config
+                .expected_articles_v05
             ),
-
             expected_v05_additional=set(
-                DocumentValidator
-                .EXPECTED_V05_ADDITIONAL
+                self.config
+                .expected_v05_additional
             ),
-
             total_changes=(
-                DEFAULT_TOTAL_CHANGES
+                self.config
+                .total_real_changes
             ),
-
             noop_changes=(
-                DEFAULT_NOOP_CHANGES
+                self.config
+                .total_noop_changes
             ),
         )
 
+    def _extract_stats(
+        self,
+        documents: Dict[
+            str,
+            DocumentInfo,
+        ],
+    ) -> Dict[
+        str,
+        DocumentStats,
+    ]:
+
+        stats: Dict[
+            str,
+            DocumentStats,
+        ] = {}
+
+        for (
+            name,
+            doc,
+        ) in documents.items():
+
+            if (
+                doc.status
+                == DocumentStatus.MISSING
+            ):
+                continue
+
+            try:
+                content = (
+                    Path(doc.path)
+                    .read_text(
+                        encoding="utf-8"
+                    )
+                )
+
+            except (
+                OSError,
+                UnicodeDecodeError,
+            ):
+                continue
+
+            expected_count = (
+                doc.articles_count
+            )
+
+            expected_ids = None
+
+            if name == "0.5.md":
+                expected_ids = set(
+                    self.config
+                    .expected_v05_additional
+                )
+
+            article_stats = (
+                self.doc_validator
+                .extract_article_stats(
+                    content,
+                    expected_count,
+                    expected_ids,
+                )
+            )
+
+            stats[name] = (
+                DocumentStats(
+                    name=name,
+                    status=doc.status,
+                    size_bytes=(
+                        doc.size_bytes
+                    ),
+                    lines=doc.lines,
+                    characters=(
+                        doc.characters
+                    ),
+                    articles=(
+                        article_stats
+                    ),
+                    has_placeholder=(
+                        doc.is_placeholder
+                    ),
+                    description=(
+                        doc.description
+                    ),
+                )
+            )
+
+        return stats
+
 
 # ============================================================
-# Helpers
+# Health Calculator
 # ============================================================
 
-def document_icon(
-    status: DocumentStatus,
-) -> str:
-
-    if status in {
-        DocumentStatus.COMPLETE,
-        DocumentStatus.PUBLISHED,
-    }:
-        return "✅"
-
-    if status == DocumentStatus.PLACEHOLDER:
-        return "⏳"
-
-    if status == DocumentStatus.INVALID:
-        return "❌"
-
-    if status == DocumentStatus.MISSING:
-        return "🚫"
-
-    return "⚠️"
-
-
-def all_documents_valid(
-    status: ProjectStatus,
-) -> bool:
-
-    return all(
-        doc.status
-        in {
-            DocumentStatus.COMPLETE,
-            DocumentStatus.PUBLISHED,
-        }
-        for doc
-        in status.documents.values()
-    )
-
-
-def get_missing_v05_articles(
-    status: ProjectStatus,
-) -> List[str]:
-
-    doc = (
-        status.documents.get(
-            "0.5.md"
-        )
-    )
-
-    if not doc:
-        return sorted(
-            status.expected_v05_additional
+class HealthCalculator:
+    def __init__(
+        self,
+        status: ProjectStatus,
+        link_report: Optional[LinkReport] = None,
+        config: Optional[ProjectConfig] = None,
+    ):
+        self.status = status
+        self.link_report = (
+            link_report
         )
 
-    found = set(
-        doc.article_ids
-    )
+        self.config = (
+            config
+            or ProjectConfig()
+        )
 
-    return sorted(
-        status.expected_v05_additional
-        - found
-    )
+    def calculate(
+        self,
+    ) -> HealthReport:
+
+        components: List[
+            HealthComponent
+        ] = []
+
+        if self.status.git.is_clean:
+            git_clean_score = 20
+            git_clean_status = "OK"
+            git_clean_detail = (
+                "Working tree clean"
+            )
+
+        else:
+            git_clean_score = 0
+            git_clean_status = "WARN"
+            git_clean_detail = (
+                "Working tree "
+                "دارای تغییرات است"
+            )
+
+        components.append(
+            HealthComponent(
+                name="Git cleanliness",
+                score=git_clean_score,
+                max_score=20,
+                status=git_clean_status,
+                detail=git_clean_detail,
+            )
+        )
+
+        if not self.status.git.upstream:
+            upstream_score = 5
+            upstream_status = "WARN"
+            upstream_detail = (
+                "Upstream تعریف نشده است"
+            )
+
+        elif (
+            self.status.git.ahead == 0
+            and self.status.git.behind == 0
+        ):
+            upstream_score = 15
+            upstream_status = "OK"
+            upstream_detail = (
+                "Local و upstream "
+                "همگام هستند"
+            )
+
+        elif self.status.git.behind > 0:
+            upstream_score = 5
+            upstream_status = "WARN"
+            upstream_detail = (
+                f"{self.status.git.behind} "
+                "commit behind"
+            )
+
+        else:
+            upstream_score = 10
+            upstream_status = "INFO"
+            upstream_detail = (
+                f"{self.status.git.ahead} "
+                "commit ahead"
+            )
+
+        components.append(
+            HealthComponent(
+                name=(
+                    "Upstream "
+                    "synchronization"
+                ),
+                score=upstream_score,
+                max_score=15,
+                status=upstream_status,
+                detail=upstream_detail,
+            )
+        )
+
+        docs = list(
+            self.status
+            .documents
+            .values()
+        )
+
+        if docs:
+            per_doc = (
+                35
+                / len(docs)
+            )
+
+            doc_score_float = 0.0
+
+            for doc in docs:
+                if (
+                    doc.status
+                    == DocumentStatus.COMPLETE
+                ):
+                    doc_score_float += (
+                        per_doc
+                    )
+
+                elif (
+                    doc.status
+                    == DocumentStatus.PUBLISHED
+                ):
+                    doc_score_float += (
+                        per_doc
+                    )
+
+                elif (
+                    doc.status
+                    == DocumentStatus.PLACEHOLDER
+                ):
+                    doc_score_float += (
+                        per_doc
+                        * 0.25
+                    )
+
+            document_score = round(
+                doc_score_float
+            )
+
+        else:
+            document_score = 0
+
+        invalid_names = [
+            name
+            for (
+                name,
+                doc,
+            )
+            in self.status
+            .documents
+            .items()
+            if doc.status
+            not in (
+                DocumentStatus.COMPLETE,
+                DocumentStatus.PUBLISHED,
+            )
+        ]
+
+        components.append(
+            HealthComponent(
+                name=(
+                    "Document validation"
+                ),
+                score=document_score,
+                max_score=35,
+                status=(
+                    "OK"
+                    if not invalid_names
+                    else "WARN"
+                ),
+                detail=(
+                    "تمام اسناد معتبرند"
+                    if not invalid_names
+                    else (
+                        "نیازمند توجه: "
+                        + ", ".join(
+                            invalid_names
+                        )
+                    )
+                ),
+            )
+        )
+
+        doc05 = (
+            self.status
+            .documents
+            .get("0.5.md")
+        )
+
+        if (
+            doc05
+            and not doc05.missing_articles
+            and doc05.detected_articles
+            == self.config
+            .expected_articles_v05
+        ):
+            additional_score = 10
+            additional_status = "OK"
+            additional_detail = (
+                "۱۲ ماده الحاقی "
+                "مورد انتظار موجودند"
+            )
+
+        else:
+            additional_score = 0
+            additional_status = "WARN"
+            additional_detail = (
+                "مواد الحاقی یا "
+                "شمارش ۰.۵ "
+                "نیازمند بررسی است"
+            )
+
+        components.append(
+            HealthComponent(
+                name=(
+                    "v0.5 structural "
+                    "additions"
+                ),
+                score=(
+                    additional_score
+                ),
+                max_score=10,
+                status=(
+                    additional_status
+                ),
+                detail=(
+                    additional_detail
+                ),
+            )
+        )
+
+        doc05_stats = (
+            self.status
+            .document_stats
+            .get("0.5.md")
+        )
+
+        if doc05_stats:
+            if (
+                doc05_stats
+                .articles
+                .has_continuity
+            ):
+                continuity_score = 10
+                continuity_status = "OK"
+                continuity_detail = (
+                    "شماره‌های پایه "
+                    "مواد ۰.۵ پیوسته‌اند"
+                )
+
+            else:
+                continuity_score = 5
+                continuity_status = "WARN"
+                continuity_detail = (
+                    "شماره‌های پایه "
+                    "مواد ۰.۵ "
+                    "دارای شکاف هستند"
+                )
+
+        else:
+            continuity_score = 0
+            continuity_status = "WARN"
+            continuity_detail = (
+                "آمار مواد ۰.۵ "
+                "در دسترس نیست"
+            )
+
+        components.append(
+            HealthComponent(
+                name=(
+                    "Article continuity"
+                ),
+                score=(
+                    continuity_score
+                ),
+                max_score=10,
+                status=(
+                    continuity_status
+                ),
+                detail=(
+                    continuity_detail
+                ),
+            )
+        )
+
+        if self.link_report is None:
+            link_score = 10
+            link_status = "INFO"
+            link_detail = (
+                "Link check اجرا نشده"
+            )
+
+        elif (
+            self.link_report.broken
+            == 0
+        ):
+            link_score = 10
+            link_status = "OK"
+            link_detail = (
+                "لینک شکسته‌ای "
+                "تشخیص داده نشد"
+            )
+
+        else:
+            link_score = 0
+            link_status = "WARN"
+            link_detail = (
+                f"{self.link_report.broken} "
+                "مورد مشکل در "
+                "لینک/ارجاع"
+            )
+
+        components.append(
+            HealthComponent(
+                name=(
+                    "Links and references"
+                ),
+                score=link_score,
+                max_score=10,
+                status=link_status,
+                detail=link_detail,
+            )
+        )
+
+        total = sum(
+            item.score
+            for item
+            in components
+        )
+
+        maximum = sum(
+            item.max_score
+            for item
+            in components
+        )
+
+        percent = (
+            (total / maximum) * 100
+            if maximum
+            else 0.0
+        )
+
+        if percent >= 95:
+            grade = "A+"
+
+        elif percent >= 90:
+            grade = "A"
+
+        elif percent >= 80:
+            grade = "B"
+
+        elif percent >= 70:
+            grade = "C"
+
+        elif percent >= 60:
+            grade = "D"
+
+        else:
+            grade = "F"
+
+        return HealthReport(
+            score=total,
+            max_score=maximum,
+            percent=round(
+                percent,
+                1,
+            ),
+            grade=grade,
+            components=components,
+        )
 
 
 # ============================================================
@@ -1419,6 +2470,39 @@ def get_missing_v05_articles(
 # ============================================================
 
 class ConsoleRenderer:
+    def __init__(
+        self,
+        console: Optional[Console] = None,
+    ):
+        self.console = (
+            console
+            or Console()
+        )
+
+    @staticmethod
+    def document_icon(
+        status: DocumentStatus,
+    ) -> str:
+
+        if status in (
+            DocumentStatus.COMPLETE,
+            DocumentStatus.PUBLISHED,
+        ):
+            return "✅"
+
+        if (
+            status
+            == DocumentStatus.PLACEHOLDER
+        ):
+            return "⏳"
+
+        if (
+            status
+            == DocumentStatus.INVALID
+        ):
+            return "❌"
+
+        return "⚠️"
 
     def render(
         self,
@@ -1432,8 +2516,12 @@ class ConsoleRenderer:
         )
 
         print(
-            " پروژه نظم داد — Nazm Dad "
-            .center(width)
+            (
+                " پروژه نظم داد — "
+                f"Status Tool v{TOOL_VERSION} "
+            ).center(
+                width
+            )
         )
 
         print(
@@ -1441,94 +2529,73 @@ class ConsoleRenderer:
         )
 
         print(
-            f"\nنسخه ابزار: v{VERSION}"
-        )
-
-        # ----------------------------------------------------
-        # Git
-        # ----------------------------------------------------
-
-        print(
             "\n📦 وضعیت Git"
         )
 
         print(
-            f"  شاخه فعلی: "
+            f"  Branch: "
             f"{status.git.branch}"
         )
 
-        print(
-            "  Working tree: "
-            + (
-                colorize(
-                    "✅ clean",
-                    Colors.GREEN,
-                )
-                if status.git.is_clean
-                else colorize(
-                    "❌ dirty",
-                    Colors.RED,
-                )
+        clean_text = (
+            self.console.success(
+                "✅ clean"
+            )
+            if status.git.is_clean
+            else self.console.error(
+                "❌ dirty"
             )
         )
 
         print(
-            "  آخرین commit: "
+            f"  Working tree: "
+            f"{clean_text}"
+        )
+
+        print(
+            "  Last commit: "
             f"{status.git.last_commit_hash}"
+            " — "
+            f"{status.git.last_commit_message}"
         )
 
-        if status.git.last_commit_message:
-
+        if (
+            status.git
+            .last_commit_date
+        ):
             print(
-                "  پیام: "
-                f"{status.git.last_commit_message}"
-            )
-
-        if status.git.last_commit_date:
-
-            print(
-                "  تاریخ: "
+                "  Commit date: "
                 f"{status.git.last_commit_date}"
             )
 
-        if status.git.tags:
-
-            print(
-                "  Tagها: "
-                + ", ".join(
-                    status.git.tags
-                )
-            )
-
-        else:
-
-            print(
-                "  Tagها: هیچ"
-            )
-
-        if status.git.remote:
-
-            print(
-                "  Remote: "
-                f"{status.git.remote}"
-            )
-
         if status.git.upstream:
-
             print(
-                "  Upstream branch: "
+                f"  Upstream: "
                 f"{status.git.upstream}"
             )
 
-        print(
-            "  نسبت به upstream: "
-            f"{status.git.ahead} ahead / "
-            f"{status.git.behind} behind"
-        )
+            print(
+                "  Ahead/Behind: "
+                f"{status.git.ahead}/"
+                f"{status.git.behind}"
+            )
 
-        # ----------------------------------------------------
-        # Documents
-        # ----------------------------------------------------
+        else:
+            print(
+                "  Upstream: ندارد"
+            )
+
+        if status.git.remote:
+            print(
+                f"  Remote: "
+                f"{status.git.remote}"
+            )
+
+        if status.git.tags:
+            print(
+                f"  Tags: "
+                f"{', '.join(status.git.tags)}"
+            )
 
         print(
             "\n📄 وضعیت اسناد"
@@ -1537,89 +2604,115 @@ class ConsoleRenderer:
         for (
             name,
             doc,
-        ) in status.documents.items():
+        ) in (
+            status.documents.items()
+        ):
 
             icon = (
-                document_icon(
+                self.document_icon(
                     doc.status
                 )
             )
 
-            print(
-                f"  {icon} {name}"
-            )
-
-            print(
-                f"      وضعیت: "
-                f"{doc.status.value}"
-            )
-
-            print(
-                f"      اندازه: "
-                f"{doc.size_bytes} bytes"
-            )
-
-            print(
-                f"      خطوط: "
-                f"{doc.lines}"
-            )
+            article_text = ""
 
             if (
                 doc.articles_count
                 is not None
             ):
-
-                print(
-                    "      مواد: "
+                article_text = (
+                    " | مواد: "
                     f"{doc.detected_articles}/"
                     f"{doc.articles_count}"
                 )
 
+            print(
+                f"  {icon} "
+                f"{name}: "
+                f"{doc.status.value}"
+                f"{article_text}"
+            )
+
+            print(
+                f"      "
+                f"{doc.size_bytes} bytes | "
+                f"{doc.lines} lines | "
+                f"{doc.characters} chars"
+            )
+
             if doc.description:
-
                 print(
-                    f"      {doc.description}"
+                    f"      "
+                    f"{doc.description}"
                 )
-
-        # ----------------------------------------------------
-        # 0.5 Articles
-        # ----------------------------------------------------
 
         print(
-            "\n🔍 مواد مستقل افزوده‌شده در ۰.۵"
+            "\n📊 آمار مواد"
         )
 
-        missing = (
-            get_missing_v05_articles(
-                status
+        for (
+            name,
+            stats,
+        ) in (
+            status
+            .document_stats
+            .items()
+        ):
+            print(
+                f"  {name}:"
             )
-        )
-
-        if missing:
 
             print(
-                "  ❌ مفقود: "
-                + ", ".join(
-                    missing
+                "      مواد شناسایی‌شده: "
+                f"{stats.articles.total_detected}"
+            )
+
+            if (
+                stats
+                .articles
+                .duplicates
+            ):
+                print(
+                    "      تکراری: "
+                    + ", ".join(
+                        stats
+                        .articles
+                        .duplicates
+                    )
+                )
+
+            if (
+                stats
+                .articles
+                .out_of_order
+            ):
+                print(
+                    "      خارج از ترتیب: "
+                    + ", ".join(
+                        stats
+                        .articles
+                        .out_of_order
+                    )
+                )
+
+            print(
+                "      پیوستگی "
+                "شماره‌های پایه: "
+                + (
+                    "✅"
+                    if stats
+                    .articles
+                    .has_continuity
+                    else "❌"
                 )
             )
-
-        else:
-
-            print(
-                "  ✅ هر ۱۲ ماده مستقل افزوده‌شده موجود است."
-            )
-
-        # ----------------------------------------------------
-        # Summary
-        # ----------------------------------------------------
 
         print(
             "\n📈 خلاصه"
         )
 
         print(
-            f"  تغییرات واقعی: "
+            "  تغییرات واقعی ۰.۴ → ۰.۵: "
             f"{status.total_changes}"
         )
 
@@ -1644,20 +2737,128 @@ class ConsoleRenderer:
         )
 
         print(
-            "  اعتبار تمام اسناد: "
-            + (
-                "✅"
-                if all_documents_valid(
-                    status
-                )
-                else "⚠️"
-            )
-        )
-
-        print(
             "\n"
             + "=" * width
         )
+
+    def render_health(
+        self,
+        report: HealthReport,
+    ) -> None:
+
+        print(
+            "🏥 سلامت پروژه"
+        )
+
+        print()
+
+        print(
+            "  امتیاز: "
+            f"{report.score}/"
+            f"{report.max_score}"
+            f" ({report.percent}%)"
+        )
+
+        print(
+            f"  Grade: "
+            f"{report.grade}"
+        )
+
+        print()
+
+        for item in (
+            report.components
+        ):
+            if (
+                item.status
+                == "OK"
+            ):
+                icon = "✅"
+
+            elif (
+                item.status
+                == "WARN"
+            ):
+                icon = "⚠️"
+
+            else:
+                icon = "ℹ️"
+
+            print(
+                f"  {icon} "
+                f"{item.name}: "
+                f"{item.score}/"
+                f"{item.max_score}"
+            )
+
+            print(
+                f"      "
+                f"{item.detail}"
+            )
+
+    def render_links(
+        self,
+        report: LinkReport,
+    ) -> None:
+
+        print(
+            "🔗 بررسی لینک‌ها "
+            "و ارجاعات"
+        )
+
+        print()
+
+        print(
+            f"  Checked: "
+            f"{report.checked}"
+        )
+
+        print(
+            f"  Valid:   "
+            f"{report.valid}"
+        )
+
+        print(
+            f"  Broken:  "
+            f"{report.broken}"
+        )
+
+        print(
+            f"  Skipped: "
+            f"{report.skipped}"
+        )
+
+        if not report.issues:
+            print()
+            print(
+                "✅ مشکل قابل‌تشخیصی "
+                "یافت نشد."
+            )
+            return
+
+        print()
+        print(
+            "موارد نیازمند بررسی:"
+        )
+
+        for issue in (
+            report.issues
+        ):
+            print(
+                f"  ❌ "
+                f"{issue.source}:"
+                f"{issue.line}"
+            )
+
+            print(
+                f"     Target: "
+                f"{issue.target}"
+            )
+
+            print(
+                f"     "
+                f"{issue.description}"
+            )
 
 
 # ============================================================
@@ -1665,128 +2866,103 @@ class ConsoleRenderer:
 # ============================================================
 
 class MarkdownRenderer:
-
     def render(
         self,
         status: ProjectStatus,
+        health: Optional[HealthReport] = None,
     ) -> str:
 
-        lines: List[str] = []
-
-        lines.append(
-            "# وضعیت پروژه نظم داد"
-        )
-
-        lines.append("")
-
-        lines.append(
-            f"**زمان تولید:** "
-            f"{status.timestamp}"
-        )
-
-        lines.append("")
-
-        lines.append(
-            f"**نسخه ابزار:** "
-            f"`{VERSION}`"
-        )
-
-        lines.append("")
-
-        # ----------------------------------------------------
-        # Git
-        # ----------------------------------------------------
-
-        lines.append(
-            "## وضعیت Git"
-        )
-
-        lines.append("")
-
-        lines.append(
-            f"- **شاخه فعلی:** "
-            f"`{status.git.branch}`"
-        )
-
-        lines.append(
-            "- **Working tree:** "
-            + (
-                "✅ clean"
-                if status.git.is_clean
-                else "❌ dirty"
-            )
-        )
-
-        lines.append(
-            f"- **آخرین commit:** "
-            f"`{status.git.last_commit_hash}`"
-            f" — "
-            f"{status.git.last_commit_message}"
-        )
-
-        if status.git.last_commit_date:
-
-            lines.append(
-                f"- **تاریخ commit:** "
-                f"{status.git.last_commit_date}"
-            )
-
-        if status.git.tags:
-
-            lines.append(
-                "- **Tagها:** "
-                + ", ".join(
-                    f"`{tag}`"
-                    for tag in status.git.tags
+        lines: List[str] = [
+            "# وضعیت پروژه نظم داد",
+            "",
+            f"**ابزار:** v{TOOL_VERSION}",
+            f"**تاریخ تولید:** {status.timestamp}",
+            "",
+            "## 📦 Git",
+            "",
+            f"- **Branch:** `{status.git.branch}`",
+            (
+                "- **Working tree:** "
+                + (
+                    "✅ clean"
+                    if status.git.is_clean
+                    else "❌ dirty"
                 )
-            )
-
-        if status.git.remote:
-
-            lines.append(
-                f"- **Remote:** "
-                f"`{status.git.remote}`"
-            )
+            ),
+            (
+                "- **Last commit:** "
+                f"`{status.git.last_commit_hash}`"
+                " — "
+                f"{status.git.last_commit_message}"
+            ),
+        ]
 
         if status.git.upstream:
-
             lines.append(
-                f"- **Upstream:** "
+                "- **Upstream:** "
                 f"`{status.git.upstream}`"
             )
 
-        lines.append(
-            f"- **نسبت به upstream:** "
-            f"{status.git.ahead} ahead / "
-            f"{status.git.behind} behind"
-        )
+            lines.append(
+                "- **Ahead / Behind:** "
+                f"{status.git.ahead} / "
+                f"{status.git.behind}"
+            )
 
-        lines.append("")
+        if status.git.tags:
+            lines.append(
+                "- **Tags:** "
+                f"{', '.join(status.git.tags)}"
+            )
 
-        # ----------------------------------------------------
-        # Documents
-        # ----------------------------------------------------
+        if status.git.remote:
+            lines.append(
+                "- **Remote:** "
+                f"`{status.git.remote}`"
+            )
 
-        lines.append(
-            "## وضعیت اسناد"
-        )
-
-        lines.append("")
-
-        lines.append(
-            "| فایل | وضعیت | اندازه | خطوط | مواد |"
-        )
-
-        lines.append(
-            "|---|---|---:|---:|---:|"
+        lines.extend(
+            [
+                "",
+                "## 📄 اسناد",
+                "",
+                (
+                    "| فایل | وضعیت | "
+                    "اندازه | خطوط | مواد |"
+                ),
+                "|---|---|---:|---:|---:|",
+            ]
         )
 
         for (
             name,
             doc,
-        ) in status.documents.items():
+        ) in (
+            status.documents.items()
+        ):
 
-            detected = (
+            if doc.status in (
+                DocumentStatus.COMPLETE,
+                DocumentStatus.PUBLISHED,
+            ):
+                icon = "✅"
+
+            elif (
+                doc.status
+                == DocumentStatus.PLACEHOLDER
+            ):
+                icon = "⏳"
+
+            elif (
+                doc.status
+                == DocumentStatus.INVALID
+            ):
+                icon = "❌"
+
+            else:
+                icon = "⚠️"
+
+            article_value = (
                 str(
                     doc.detected_articles
                 )
@@ -1798,109 +2974,150 @@ class MarkdownRenderer:
             )
 
             lines.append(
-                f"| {name} "
-                f"| {document_icon(doc.status)} "
-                f"{doc.status.value} "
-                f"| {doc.size_bytes} B "
+                f"| {icon} `{name}` "
+                f"| {doc.status.value} "
+                f"| {doc.size_bytes} "
                 f"| {doc.lines} "
-                f"| {detected} |"
+                f"| {article_value} |"
             )
 
-        lines.append("")
-
-        # ----------------------------------------------------
-        # Additional Articles
-        # ----------------------------------------------------
-
-        lines.append(
-            "## مواد مستقل افزوده‌شده در ۰.۵"
+        lines.extend(
+            [
+                "",
+                "## 📊 آمار مواد",
+                "",
+                (
+                    "| فایل | "
+                    "مواد شناسایی‌شده | "
+                    "تکراری | "
+                    "خارج از ترتیب | "
+                    "پیوستگی پایه |"
+                ),
+                "|---|---:|---|---|---|",
+            ]
         )
 
-        lines.append("")
+        for (
+            name,
+            stats,
+        ) in (
+            status
+            .document_stats
+            .items()
+        ):
 
-        missing = (
-            get_missing_v05_articles(
-                status
-            )
-        )
-
-        if missing:
-
-            lines.append(
-                "❌ مواد مفقود: "
-                + ", ".join(
-                    missing
+            duplicates_text = (
+                ", ".join(
+                    stats
+                    .articles
+                    .duplicates
                 )
+                if stats
+                .articles
+                .duplicates
+                else "-"
             )
 
-        else:
-
-            lines.append(
-                "✅ هر ۱۲ ماده مستقل افزوده‌شده "
-                "در نسخه ۰.۵ موجود است."
+            out_of_order_text = (
+                ", ".join(
+                    stats
+                    .articles
+                    .out_of_order
+                )
+                if stats
+                .articles
+                .out_of_order
+                else "-"
             )
 
-        lines.append("")
-
-        # ----------------------------------------------------
-        # Summary
-        # ----------------------------------------------------
-
-        lines.append(
-            "## خلاصه"
-        )
-
-        lines.append("")
-
-        lines.append(
-            f"- **تغییرات واقعی:** "
-            f"{status.total_changes}"
-        )
-
-        lines.append(
-            f"- **No-op:** "
-            f"{status.noop_changes}"
-        )
-
-        lines.append(
-            f"- **مواد ۰.۴:** "
-            f"{status.total_articles_v04}"
-        )
-
-        lines.append(
-            f"- **مواد ۰.۵:** "
-            f"{status.total_articles_v05}"
-        )
-
-        lines.append(
-            f"- **افزایش مواد مستقل:** "
-            f"{status.total_articles_v05 - status.total_articles_v04}"
-        )
-
-        lines.append(
-            "- **اعتبار تمام اسناد:** "
-            + (
+            continuity_text = (
                 "✅"
-                if all_documents_valid(
-                    status
-                )
-                else "⚠️"
+                if stats
+                .articles
+                .has_continuity
+                else "❌"
             )
+
+            lines.append(
+                f"| `{name}` "
+                f"| {stats.articles.total_detected} "
+                f"| {duplicates_text} "
+                f"| {out_of_order_text} "
+                f"| {continuity_text} |"
+            )
+
+        lines.extend(
+            [
+                "",
+                "## 📈 خلاصه",
+                "",
+                (
+                    "- **تغییرات واقعی:** "
+                    f"{status.total_changes}"
+                ),
+                (
+                    f"- **No-op:** "
+                    f"{status.noop_changes}"
+                ),
+                (
+                    f"- **مواد ۰.۴:** "
+                    f"{status.total_articles_v04}"
+                ),
+                (
+                    f"- **مواد ۰.۵:** "
+                    f"{status.total_articles_v05}"
+                ),
+                (
+                    "- **مواد مستقل افزوده:** "
+                    f"{status.total_articles_v05 - status.total_articles_v04}"
+                ),
+            ]
         )
 
-        lines.append("")
+        if health is not None:
+            lines.extend(
+                [
+                    "",
+                    "## 🏥 سلامت پروژه",
+                    "",
+                    (
+                        f"**{health.score}/"
+                        f"{health.max_score} "
+                        f"({health.percent}%) "
+                        f"— Grade "
+                        f"{health.grade}**"
+                    ),
+                    "",
+                    "| بخش | امتیاز | وضعیت |",
+                    "|---|---:|---|",
+                ]
+            )
 
-        lines.append("---")
+            for item in (
+                health.components
+            ):
+                lines.append(
+                    f"| {item.name} "
+                    f"| {item.score}/"
+                    f"{item.max_score} "
+                    f"| {item.detail} |"
+                )
 
-        lines.append("")
-
-        lines.append(
-            "_تولیدشده توسط "
-            "`nazm_dad_project_status.py`_"
+        lines.extend(
+            [
+                "",
+                "---",
+                (
+                    "_Generated by "
+                    "Nazm Dad Project Status "
+                    f"v{TOOL_VERSION}_"
+                ),
+            ]
         )
 
-        return "\n".join(
-            lines
+        return (
+            "\n".join(lines)
+            + "\n"
         )
 
 
@@ -1909,416 +3126,1259 @@ class MarkdownRenderer:
 # ============================================================
 
 class JsonRenderer:
-
     def render(
         self,
         status: ProjectStatus,
+        health: Optional[HealthReport] = None,
     ) -> str:
-
-        documents: Dict[
-            str,
-            Dict
-        ] = {}
-
-        for (
-            name,
-            doc,
-        ) in status.documents.items():
-
-            documents[name] = {
-                "path":
-                    str(doc.path),
-
-                "status":
-                    doc.status.value,
-
-                "size_bytes":
-                    doc.size_bytes,
-
-                "lines":
-                    doc.lines,
-
-                "characters":
-                    doc.characters,
-
-                "expected_articles":
-                    doc.articles_count,
-
-                "detected_articles":
-                    doc.detected_articles,
-
-                "article_ids":
-                    doc.article_ids,
-
-                "duplicate_articles":
-                    doc.duplicate_articles,
-
-                "missing_additional":
-                    doc.missing_additional,
-
-                "is_placeholder":
-                    doc.is_placeholder,
-
-                "description":
-                    doc.description,
-            }
-
-        missing = (
-            get_missing_v05_articles(
-                status
-            )
-        )
 
         data = {
             "tool": {
-                "name":
-                    "nazm_dad_project_status",
-
-                "version":
-                    VERSION,
+                "name": (
+                    "nazm_dad_project_status"
+                ),
+                "version": (
+                    TOOL_VERSION
+                ),
             },
 
-            "timestamp":
-                status.timestamp,
+            "timestamp": (
+                status.timestamp
+            ),
 
-            "git": {
-                "branch":
-                    status.git.branch,
+            "git": asdict(
+                status.git
+            ),
 
-                "is_clean":
-                    status.git.is_clean,
-
-                "last_commit":
-                    status.git.last_commit_hash,
-
-                "last_commit_message":
-                    status.git.last_commit_message,
-
-                "last_commit_date":
-                    status.git.last_commit_date,
-
-                "tags":
-                    status.git.tags,
-
-                "ahead":
-                    status.git.ahead,
-
-                "behind":
-                    status.git.behind,
-
-                "upstream":
-                    status.git.upstream,
-
-                "remote":
-                    status.git.remote,
-
-                "repository_root":
-                    (
-                        str(
-                            status.git.repository_root
-                        )
-                        if status.git.repository_root
-                        else None
+            "documents": {
+                name: {
+                    **asdict(doc),
+                    "status": (
+                        doc.status.value
                     ),
+                }
+                for (
+                    name,
+                    doc,
+                )
+                in (
+                    status
+                    .documents
+                    .items()
+                )
             },
 
-            "documents":
-                documents,
-
-            "v05_additional_articles": {
-                "expected":
-                    sorted(
-                        status.expected_v05_additional
+            "document_stats": {
+                name: {
+                    "status": (
+                        stats.status.value
                     ),
+                    "size_bytes": (
+                        stats.size_bytes
+                    ),
+                    "lines": (
+                        stats.lines
+                    ),
+                    "characters": (
+                        stats.characters
+                    ),
+                    "articles": {
+                        "total_expected": (
+                            stats
+                            .articles
+                            .total_expected
+                        ),
+                        "total_detected": (
+                            stats
+                            .articles
+                            .total_detected
+                        ),
+                        "ids": (
+                            stats
+                            .articles
+                            .ids
+                        ),
+                        "missing": (
+                            stats
+                            .articles
+                            .missing
+                        ),
+                        "duplicates": (
+                            stats
+                            .articles
+                            .duplicates
+                        ),
+                        "out_of_order": (
+                            stats
+                            .articles
+                            .out_of_order
+                        ),
+                        "has_continuity": (
+                            stats
+                            .articles
+                            .has_continuity
+                        ),
+                    },
+                    "has_placeholder": (
+                        stats
+                        .has_placeholder
+                    ),
+                    "description": (
+                        stats.description
+                    ),
+                }
 
-                "missing":
-                    missing,
-
-                "all_present":
-                    not missing,
+                for (
+                    name,
+                    stats,
+                )
+                in (
+                    status
+                    .document_stats
+                    .items()
+                )
             },
 
             "summary": {
-                "total_changes":
-                    status.total_changes,
-
-                "noop_changes":
-                    status.noop_changes,
-
-                "articles_v04":
-                    status.total_articles_v04,
-
-                "articles_v05":
-                    status.total_articles_v05,
-
-                "added_articles":
-                    (
-                        status.total_articles_v05
-                        - status.total_articles_v04
-                    ),
-
-                "all_documents_valid":
-                    all_documents_valid(
-                        status
-                    ),
+                "total_changes": (
+                    status.total_changes
+                ),
+                "noop_changes": (
+                    status.noop_changes
+                ),
+                "articles_v04": (
+                    status
+                    .total_articles_v04
+                ),
+                "articles_v05": (
+                    status
+                    .total_articles_v05
+                ),
+                "added_articles": (
+                    status
+                    .total_articles_v05
+                    - status
+                    .total_articles_v04
+                ),
+                "expected_v05_additional": sorted(
+                    status
+                    .expected_v05_additional
+                ),
             },
         }
 
-        return json.dumps(
-            data,
-            ensure_ascii=False,
-            indent=2,
+        if health is not None:
+            data["health"] = {
+                "score": health.score,
+                "max_score": (
+                    health.max_score
+                ),
+                "percent": (
+                    health.percent
+                ),
+                "grade": (
+                    health.grade
+                ),
+                "components": [
+                    asdict(component)
+                    for component
+                    in health.components
+                ],
+            }
+
+        return (
+            json.dumps(
+                data,
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n"
         )
 
 
 # ============================================================
-# History Renderer
+# HTML Renderer
 # ============================================================
 
-class HistoryRenderer:
+class HtmlRenderer:
+    def render(
+        self,
+        status: ProjectStatus,
+        health: Optional[HealthReport] = None,
+    ) -> str:
+
+        total_articles = sum(
+            stats
+            .articles
+            .total_detected
+
+            for stats
+            in (
+                status
+                .document_stats
+                .values()
+            )
+        )
+
+        invalid_docs = [
+            name
+
+            for (
+                name,
+                doc,
+            )
+
+            in (
+                status
+                .documents
+                .items()
+            )
+
+            if doc.status
+            not in (
+                DocumentStatus.COMPLETE,
+                DocumentStatus.PUBLISHED,
+            )
+        ]
+
+        health_percent = (
+            health.percent
+            if health
+            else 0.0
+        )
+
+        health_score = (
+            health.score
+            if health
+            else 0
+        )
+
+        health_max_score = (
+            health.max_score
+            if health
+            else 0
+        )
+
+        health_grade = (
+            html_escape(
+                health.grade
+            )
+            if health
+            else "N/A"
+        )
+
+        if health_percent >= 80:
+            health_color = (
+                "#27ae60"
+            )
+
+        elif health_percent >= 60:
+            health_color = (
+                "#f39c12"
+            )
+
+        else:
+            health_color = (
+                "#e74c3c"
+            )
+
+        branch = html_escape(
+            status.git.branch
+        )
+
+        commit_hash = html_escape(
+            status.git
+            .last_commit_hash
+        )
+
+        commit_message = html_escape(
+            status.git
+            .last_commit_message
+        )
+
+        upstream = (
+            html_escape(
+                status.git.upstream
+            )
+            if status.git.upstream
+            else ""
+        )
+
+        tags = (
+            html_escape(
+                ", ".join(
+                    status.git.tags
+                )
+            )
+            if status.git.tags
+            else "بدون Tag"
+        )
+
+        clean_status = (
+            "✅ clean"
+            if status.git.is_clean
+            else "❌ dirty"
+        )
+
+        valid_docs_count = sum(
+            1
+            for doc
+            in (
+                status
+                .documents
+                .values()
+            )
+            if doc.status
+            in (
+                DocumentStatus.COMPLETE,
+                DocumentStatus.PUBLISHED,
+            )
+        )
+
+        health_rows = (
+            "".join(
+                self._health_row(
+                    item
+                )
+                for item
+                in health.components
+            )
+            if health
+            else (
+                "<tr>"
+                "<td colspan='3'>"
+                "اطلاعات سلامت "
+                "در دسترس نیست"
+                "</td>"
+                "</tr>"
+            )
+        )
+
+        document_rows = "".join(
+            self._doc_row(
+                name,
+                doc,
+            )
+
+            for (
+                name,
+                doc,
+            )
+
+            in (
+                status
+                .documents
+                .items()
+            )
+        )
+
+        stats_rows = "".join(
+            self._stats_row(
+                stats
+            )
+
+            for stats
+            in (
+                status
+                .document_stats
+                .values()
+            )
+        )
+
+        return f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظم داد — وضعیت پروژه</title>
+
+<style>
+body {{
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #F5F0E6;
+    color: #0A1E3F;
+    margin: 0;
+    padding: 20px;
+    direction: rtl;
+}}
+
+.container {{
+    max-width: 1200px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 12px;
+    padding: 30px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+}}
+
+.header {{
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid #C9A86C;
+    padding-bottom: 15px;
+    margin-bottom: 25px;
+}}
+
+.header h1 {{
+    margin: 0;
+    font-size: 28px;
+}}
+
+.version {{
+    color: #71889A;
+}}
+
+.health-score {{
+    background: {health_color};
+    color: white;
+    padding: 15px 25px;
+    border-radius: 8px;
+}}
+
+.grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}}
+
+.card {{
+    background: #f8f6f0;
+    border-radius: 8px;
+    padding: 16px 20px;
+    border-right: 4px solid #C9A86C;
+}}
+
+.card h3 {{
+    margin-top: 0;
+}}
+
+.value {{
+    font-size: 24px;
+    font-weight: bold;
+}}
+
+.sub {{
+    color: #71889A;
+    margin-top: 5px;
+}}
+
+.status-badge {{
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+
+.status-ok {{
+    background: #d4edda;
+    color: #155724;
+}}
+
+.status-warn {{
+    background: #fff3cd;
+    color: #856404;
+}}
+
+.status-error {{
+    background: #f8d7da;
+    color: #721c24;
+}}
+
+.status-info {{
+    background: #d1ecf1;
+    color: #0c5460;
+}}
+
+table {{
+    width: 100%;
+    border-collapse: collapse;
+    margin: 15px 0;
+}}
+
+th,
+td {{
+    padding: 10px 12px;
+    text-align: right;
+    border-bottom: 1px solid #eee;
+}}
+
+th {{
+    background: #f5f0e6;
+}}
+
+.progress-bar {{
+    width: 100%;
+    height: 8px;
+    background: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+}}
+
+.progress-fill {{
+    height: 100%;
+    background: {health_color};
+    width: {health_percent}%;
+}}
+
+.footer {{
+    margin-top: 25px;
+    border-top: 1px solid #eee;
+    padding-top: 15px;
+    color: #71889A;
+    text-align: center;
+}}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<div class="header">
+    <h1>نظم داد</h1>
+    <div>
+        <span class="version">v{TOOL_VERSION}</span>
+        <span style="margin-right:15px;">
+            {html_escape(status.timestamp[:10])}
+        </span>
+    </div>
+</div>
+
+<div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+
+    <div class="health-score">
+        <div>سلامت پروژه</div>
+        <div style="font-size:36px;font-weight:bold;">
+            {health_percent:.0f}%
+        </div>
+        <div>{health_grade}</div>
+    </div>
+
+    <div style="flex:1;min-width:220px;">
+        <div>
+            امتیاز: {health_score}/{health_max_score}
+        </div>
+
+        <div class="progress-bar">
+            <div class="progress-fill"></div>
+        </div>
+    </div>
+
+</div>
+
+<div class="grid">
+
+<div class="card">
+<h3>🔄 Git</h3>
+<div class="value">{branch}</div>
+<div class="sub">
+{commit_hash} — {commit_message}
+</div>
+<div class="sub">
+{clean_status}
+{" | " + upstream if upstream else ""}
+</div>
+</div>
+
+<div class="card">
+<h3>📄 اسناد</h3>
+<div class="value">{len(status.documents)}</div>
+<div class="sub">
+✅ {valid_docs_count} معتبر
+{" | ⚠️ " + str(len(invalid_docs)) + " مشکل" if invalid_docs else ""}
+</div>
+</div>
+
+<div class="card">
+<h3>📊 مواد</h3>
+<div class="value">{total_articles}</div>
+<div class="sub">
+مواد شناسایی‌شده در اسناد
+</div>
+</div>
+
+<div class="card">
+<h3>🏷️ نسخه‌ها</h3>
+<div class="value">{len(status.git.tags)}</div>
+<div class="sub">
+{"آخرین: " + tags if status.git.tags else "بدون Tag"}
+</div>
+</div>
+
+</div>
+
+<h2>📄 وضعیت اسناد</h2>
+
+<table>
+<thead>
+<tr>
+<th>فایل</th>
+<th>وضعیت</th>
+<th>اندازه</th>
+<th>خطوط</th>
+<th>مواد</th>
+</tr>
+</thead>
+
+<tbody>
+{document_rows}
+</tbody>
+</table>
+
+<h2>📊 آمار مواد</h2>
+
+<table>
+<thead>
+<tr>
+<th>فایل</th>
+<th>مواد شناسایی‌شده</th>
+<th>تکراری</th>
+<th>خارج از ترتیب</th>
+<th>پیوستگی پایه</th>
+</tr>
+</thead>
+
+<tbody>
+{stats_rows}
+</tbody>
+</table>
+
+<h2>🏥 اجزای سلامت</h2>
+
+<table>
+<thead>
+<tr>
+<th>بخش</th>
+<th>امتیاز</th>
+<th>وضعیت</th>
+</tr>
+</thead>
+
+<tbody>
+{health_rows}
+</tbody>
+</table>
+
+<div class="footer">
+نظم داد — Nazm Dad |
+Generated by Nazm Dad Project Status v{TOOL_VERSION}
+</div>
+
+</div>
+
+</body>
+</html>
+"""
+
+    def _doc_row(
+        self,
+        name: str,
+        doc: DocumentInfo,
+    ) -> str:
+
+        status_class = {
+            DocumentStatus.COMPLETE:
+                "status-ok",
+
+            DocumentStatus.PUBLISHED:
+                "status-ok",
+
+            DocumentStatus.PLACEHOLDER:
+                "status-warn",
+
+            DocumentStatus.INVALID:
+                "status-error",
+
+            DocumentStatus.MISSING:
+                "status-error",
+        }.get(
+            doc.status,
+            "status-info",
+        )
+
+        status_label = {
+            DocumentStatus.COMPLETE:
+                "✅ کامل",
+
+            DocumentStatus.PUBLISHED:
+                "✅ منتشر شده",
+
+            DocumentStatus.PLACEHOLDER:
+                "⏳ placeholder",
+
+            DocumentStatus.INVALID:
+                "❌ نامعتبر",
+
+            DocumentStatus.MISSING:
+                "⚠️ وجود ندارد",
+        }.get(
+            doc.status,
+            "❓",
+        )
+
+        articles = (
+            f"{doc.detected_articles}/"
+            f"{doc.articles_count}"
+            if (
+                doc.articles_count
+                is not None
+            )
+            else "-"
+        )
+
+        return f"""
+<tr>
+<td>{html_escape(name)}</td>
+<td>
+<span class="status-badge {status_class}">
+{status_label}
+</span>
+</td>
+<td>{doc.size_bytes}</td>
+<td>{doc.lines}</td>
+<td>{html_escape(articles)}</td>
+</tr>
+"""
+
+    def _stats_row(
+        self,
+        stats: DocumentStats,
+    ) -> str:
+
+        duplicates = (
+            ", ".join(
+                stats
+                .articles
+                .duplicates
+            )
+            if stats
+            .articles
+            .duplicates
+            else "-"
+        )
+
+        out_of_order = (
+            ", ".join(
+                stats
+                .articles
+                .out_of_order
+            )
+            if stats
+            .articles
+            .out_of_order
+            else "-"
+        )
+
+        continuity = (
+            "✅"
+            if stats
+            .articles
+            .has_continuity
+            else "❌"
+        )
+
+        return f"""
+<tr>
+<td>{html_escape(stats.name)}</td>
+<td>{stats.articles.total_detected}</td>
+<td>{html_escape(duplicates)}</td>
+<td>{html_escape(out_of_order)}</td>
+<td>{continuity}</td>
+</tr>
+"""
+
+    def _health_row(
+        self,
+        item: HealthComponent,
+    ) -> str:
+
+        status_class = {
+            "OK":
+                "status-ok",
+
+            "WARN":
+                "status-warn",
+
+            "INFO":
+                "status-info",
+        }.get(
+            item.status,
+            "status-info",
+        )
+
+        return f"""
+<tr>
+<td>{html_escape(item.name)}</td>
+<td>{item.score}/{item.max_score}</td>
+<td>
+<span class="status-badge {status_class}">
+{html_escape(item.detail)}
+</span>
+</td>
+</tr>
+"""
+
+
+# ============================================================
+# Diff Renderer
+# ============================================================
+
+class DiffRenderer:
+    def __init__(
+        self,
+        console: Optional[Console] = None,
+    ):
+        self.console = (
+            console
+            or Console()
+        )
 
     def render(
         self,
-        history: List[TagInfo],
-    ) -> None:
+        left: Path,
+        right: Path,
+    ) -> int:
 
-        print(
-            "🏷️ تاریخچه نسخه‌ها / Tagها"
-        )
-
-        print()
-
-        if not history:
-
+        if not left.exists():
             print(
-                "هیچ Tagی در مخزن یافت نشد."
+                f"❌ فایل وجود ندارد: "
+                f"{left}",
+                file=sys.stderr,
+            )
+            return int(
+                ExitCode.RUNTIME_ERROR
             )
 
-            return
-
-        for index, tag in enumerate(
-            history,
-            start=1,
-        ):
-
+        if not right.exists():
             print(
-                f"{index}. {tag.name}"
+                f"❌ فایل وجود ندارد: "
+                f"{right}",
+                file=sys.stderr,
             )
-
-            print(
-                f"   Commit: "
-                f"{tag.commit_hash}"
+            return int(
+                ExitCode.RUNTIME_ERROR
             )
-
-            print(
-                f"   Date: "
-                f"{tag.commit_date}"
-            )
-
-            if tag.subject:
-
-                print(
-                    f"   Message: "
-                    f"{tag.subject}"
-                )
-
-            print()
-
-
-# ============================================================
-# File Diff
-# ============================================================
-
-class FileDiffRenderer:
-
-    def __init__(
-        self,
-        use_color: bool = True,
-    ):
-        self.use_color = use_color
-
-    @staticmethod
-    def _read_file(
-        path: Path,
-    ) -> List[str]:
 
         try:
+            left_lines = (
+                left
+                .read_text(
+                    encoding="utf-8"
+                )
+                .splitlines(
+                    keepends=True
+                )
+            )
 
-            text = path.read_text(
-                encoding="utf-8"
+            right_lines = (
+                right
+                .read_text(
+                    encoding="utf-8"
+                )
+                .splitlines(
+                    keepends=True
+                )
             )
 
         except UnicodeDecodeError as exc:
-
-            raise RuntimeError(
-                f"فایل UTF-8 معتبر نیست:\n"
-                f"{path}\n"
-                f"{exc}"
-            ) from exc
-
-        except OSError as exc:
-
-            raise RuntimeError(
-                f"امکان خواندن فایل وجود ندارد:\n"
-                f"{path}\n"
-                f"{exc}"
-            ) from exc
-
-        return text.splitlines(
-            keepends=True
-        )
-
-    def render(
-        self,
-        first: Path,
-        second: Path,
-    ) -> None:
-
-        if not first.exists():
-
-            raise RuntimeError(
-                f"فایل اول وجود ندارد:\n{first}"
+            print(
+                f"❌ Encoding error: "
+                f"{exc}",
+                file=sys.stderr,
             )
-
-        if not second.exists():
-
-            raise RuntimeError(
-                f"فایل دوم وجود ندارد:\n{second}"
+            return int(
+                ExitCode.RUNTIME_ERROR
             )
-
-        if not first.is_file():
-
-            raise RuntimeError(
-                f"مسیر اول فایل نیست:\n{first}"
-            )
-
-        if not second.is_file():
-
-            raise RuntimeError(
-                f"مسیر دوم فایل نیست:\n{second}"
-            )
-
-        left_lines = self._read_file(
-            first
-        )
-
-        right_lines = self._read_file(
-            second
-        )
 
         diff = difflib.unified_diff(
             left_lines,
             right_lines,
-
-            fromfile=str(first),
-            tofile=str(second),
-
-            lineterm="",
+            fromfile=str(left),
+            tofile=str(right),
         )
 
-        diff_lines = list(
-            diff
-        )
+        found = False
 
-        if not diff_lines:
+        for line in diff:
+            found = True
 
-            print(
-                "✅ دو فایل یکسان هستند."
+            printable = (
+                line.rstrip("\n")
             )
 
-            return
-
-        print(
-            f"🔎 Diff:"
-        )
-
-        print(
-            f"  A: {first}"
-        )
-
-        print(
-            f"  B: {second}"
-        )
-
-        print()
-
-        for line in diff_lines:
-
-            clean = line.rstrip(
-                "\n"
-            )
-
-            if clean.startswith(
-                "+++"
-            ) or clean.startswith(
-                "---"
+            if (
+                line.startswith("+++")
+                or line.startswith("---")
             ):
-
                 print(
-                    colorize(
-                        clean,
-                        Colors.BLUE,
-                        self.use_color,
+                    self.console.color(
+                        printable,
+                        "blue",
                     )
                 )
 
-            elif clean.startswith(
-                "@@"
+            elif (
+                line.startswith("@@")
             ):
-
                 print(
-                    colorize(
-                        clean,
-                        Colors.CYAN,
-                        self.use_color,
+                    self.console.color(
+                        printable,
+                        "cyan",
                     )
                 )
 
-            elif clean.startswith(
-                "+"
+            elif (
+                line.startswith("+")
             ):
-
                 print(
-                    colorize(
-                        clean,
-                        Colors.GREEN,
-                        self.use_color,
+                    self.console.color(
+                        printable,
+                        "green",
                     )
                 )
 
-            elif clean.startswith(
-                "-"
+            elif (
+                line.startswith("-")
             ):
-
                 print(
-                    colorize(
-                        clean,
-                        Colors.RED,
-                        self.use_color,
+                    self.console.color(
+                        printable,
+                        "red",
                     )
                 )
 
             else:
-
                 print(
-                    clean
+                    printable
                 )
 
+        if not found:
+            print(
+                "✅ دو فایل "
+                "یکسان هستند."
+            )
+
+        return int(
+            ExitCode.OK
+        )
+
 
 # ============================================================
-# Quick Check
+# Global Helpers
 # ============================================================
 
-def print_quick_check(
+def all_documents_valid(
     status: ProjectStatus,
-) -> None:
+) -> bool:
 
-    print(
-        "📋 خلاصه سریع وضعیت نظم داد"
+    return all(
+        doc.status
+        in (
+            DocumentStatus.COMPLETE,
+            DocumentStatus.PUBLISHED,
+        )
+
+        for doc
+        in (
+            status
+            .documents
+            .values()
+        )
     )
 
+
+def missing_v05_additional(
+    status: ProjectStatus,
+) -> List[str]:
+
+    doc = (
+        status
+        .documents
+        .get("0.5.md")
+    )
+
+    if not doc:
+        return sorted(
+            status
+            .expected_v05_additional
+        )
+
+    found = set(
+        doc
+        .detected_article_ids
+    )
+
+    return sorted(
+        status
+        .expected_v05_additional
+        - found
+    )
+
+
+def load_config(
+    path: Optional[str],
+    repo_path: Optional[Path] = None,
+) -> ProjectConfig:
+
+    if not path:
+        possible_paths: List[
+            Path
+        ] = []
+
+        if repo_path:
+            possible_paths.extend(
+                [
+                    repo_path
+                    / ".nazm-dad-config.json",
+
+                    repo_path
+                    / "nazm-dad-config.json",
+                ]
+            )
+
+        possible_paths.extend(
+            [
+                Path.cwd()
+                / ".nazm-dad-config.json",
+
+                Path.cwd()
+                / "nazm-dad-config.json",
+
+                Path.home()
+                / ".nazm-dad-config.json",
+            ]
+        )
+
+        seen: Set[
+            Path
+        ] = set()
+
+        for config_path in (
+            possible_paths
+        ):
+            resolved = (
+                config_path
+                .expanduser()
+                .resolve()
+            )
+
+            if resolved in seen:
+                continue
+
+            seen.add(
+                resolved
+            )
+
+            if resolved.exists():
+                return (
+                    ProjectConfig
+                    .from_file(
+                        resolved
+                    )
+                )
+
+        return ProjectConfig()
+
+    config_path = (
+        Path(path)
+        .expanduser()
+        .resolve()
+    )
+
+    if not config_path.exists():
+        print(
+            "⚠️ فایل پیکربندی "
+            f"'{config_path}' "
+            "وجود ندارد. "
+            "استفاده از پیش‌فرض.",
+            file=sys.stderr,
+        )
+
+        return ProjectConfig()
+
+    return ProjectConfig.from_file(
+        config_path
+    )
+
+
+# ============================================================
+# CLI
+# ============================================================
+
+def parse_args(
+) -> argparse.Namespace:
+
+    parser = (
+        argparse.ArgumentParser(
+            description=(
+                "Nazm Dad "
+                "Project Status Tool "
+                f"v{TOOL_VERSION}"
+            ),
+            epilog=(
+                "Git operations "
+                "are read-only. "
+                "--markdown, --json "
+                "and --html write files "
+                "only when explicitly "
+                "requested."
+            ),
+        )
+    )
+
+    parser.add_argument(
+        "--path",
+        default=None,
+        help=(
+            "مسیر مخزن Git؛ "
+            "اولویت CLI > config > "
+            "دایرکتوری فعلی"
+        ),
+    )
+
+    parser.add_argument(
+        "--config",
+        default=None,
+        help=(
+            "مسیر فایل "
+            ".nazm-dad-config.json"
+        ),
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help=(
+            "مسیر ذخیره خروجی‌ها؛ "
+            "اولویت CLI > config > "
+            "ریشه مخزن"
+        ),
+    )
+
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help=(
+            "نمایش جزئیات بیشتر"
+        ),
+    )
+
+    parser.add_argument(
+        "--no-color",
+        action="store_true",
+        help=(
+            "غیرفعال کردن "
+            "رنگ خروجی"
+        ),
+    )
+
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help=(
+            "غیرفعال کردن "
+            "گزارش پیشرفت"
+        ),
+    )
+
+    mode = (
+        parser
+        .add_mutually_exclusive_group()
+    )
+
+    mode.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "خلاصه سریع وضعیت"
+        ),
+    )
+
+    mode.add_argument(
+        "--validate-docs",
+        action="store_true",
+        help=(
+            "اعتبارسنجی اسناد"
+        ),
+    )
+
+    mode.add_argument(
+        "--health",
+        action="store_true",
+        help=(
+            "محاسبه Health Score"
+        ),
+    )
+
+    mode.add_argument(
+        "--check-links",
+        action="store_true",
+        help=(
+            "بررسی لینک‌ها "
+            "و ارجاعات داخلی"
+        ),
+    )
+
+    mode.add_argument(
+        "--history",
+        action="store_true",
+        help=(
+            "نمایش تاریخچه Tagها"
+        ),
+    )
+
+    mode.add_argument(
+        "--diff",
+        nargs=2,
+        metavar=(
+            "FILE_A",
+            "FILE_B",
+        ),
+        help=(
+            "مقایسه دو فایل"
+        ),
+    )
+
+    mode.add_argument(
+        "--markdown",
+        action="store_true",
+        help=(
+            "تولید STATUS.md"
+        ),
+    )
+
+    mode.add_argument(
+        "--json",
+        action="store_true",
+        help=(
+            "تولید status.json"
+        ),
+    )
+
+    mode.add_argument(
+        "--html",
+        action="store_true",
+        help=(
+            "تولید dashboard.html"
+        ),
+    )
+
+    return parser.parse_args()
+
+
+# ============================================================
+# CLI Operations
+# ============================================================
+
+def render_check(
+    status: ProjectStatus,
+) -> int:
+
     print(
-        f"  Tool: v{VERSION}"
+        "📋 خلاصه سریع"
     )
 
     print(
@@ -2336,48 +4396,48 @@ def print_quick_check(
     )
 
     print(
-        f"  Commit: "
+        "  Commit: "
         f"{status.git.last_commit_hash}"
-        f" — "
+        " — "
         f"{status.git.last_commit_message}"
     )
 
     if status.git.upstream:
-
         print(
-            f"  Upstream branch: "
-            f"{status.git.upstream}"
+            "  Upstream: "
+            f"{status.git.ahead} ahead / "
+            f"{status.git.behind} behind"
         )
 
-    print(
-        "  Relation: "
-        f"{status.git.ahead} ahead / "
-        f"{status.git.behind} behind"
-    )
-
-    if status.git.tags:
-
+    else:
         print(
-            "  Tags: "
-            + ", ".join(
-                status.git.tags
-            )
+            "  Upstream: "
+            "⚠️ not configured"
         )
 
-    invalid: List[str] = []
-    placeholders: List[str] = []
-    missing_docs: List[str] = []
+    invalid: List[
+        str
+    ] = []
+
+    placeholders: List[
+        str
+    ] = []
+
+    missing: List[
+        str
+    ] = []
 
     for (
         name,
         doc,
-    ) in status.documents.items():
+    ) in (
+        status.documents.items()
+    ):
 
         if (
             doc.status
             == DocumentStatus.INVALID
         ):
-
             invalid.append(
                 name
             )
@@ -2386,7 +4446,6 @@ def print_quick_check(
             doc.status
             == DocumentStatus.PLACEHOLDER
         ):
-
             placeholders.append(
                 name
             )
@@ -2395,13 +4454,11 @@ def print_quick_check(
             doc.status
             == DocumentStatus.MISSING
         ):
-
-            missing_docs.append(
+            missing.append(
                 name
             )
 
     if invalid:
-
         print(
             "  ❌ Invalid: "
             + ", ".join(
@@ -2410,7 +4467,6 @@ def print_quick_check(
         )
 
     if placeholders:
-
         print(
             "  ⏳ Placeholder: "
             + ", ".join(
@@ -2418,54 +4474,90 @@ def print_quick_check(
             )
         )
 
-    if missing_docs:
-
+    if missing:
         print(
-            "  🚫 Missing: "
+            "  ⚠️ Missing: "
             + ", ".join(
-                missing_docs
+                missing
             )
         )
 
     if (
         not invalid
         and not placeholders
-        and not missing_docs
+        and not missing
     ):
-
         print(
-            "  Documents: ✅ all valid"
+            "  Documents: "
+            "✅ all valid"
         )
 
-    missing_articles = (
-        get_missing_v05_articles(
+    missing_additional = (
+        missing_v05_additional(
             status
         )
     )
 
-    if missing_articles:
-
+    if missing_additional:
         print(
-            "  ❌ Missing 0.5 additional articles: "
+            "  ❌ Missing v0.5 "
+            "additions: "
             + ", ".join(
-                missing_articles
+                missing_additional
             )
         )
 
     else:
-
         print(
-            "  12 additional articles: ✅ all present"
+            "  Additional articles: "
+            "✅ all 12 present"
         )
 
+    doc05_stats = (
+        status
+        .document_stats
+        .get("0.5.md")
+    )
 
-# ============================================================
-# Document Validation Output
-# ============================================================
+    if (
+        doc05_stats
+        and not doc05_stats
+        .articles
+        .has_continuity
+    ):
+        print(
+            "  ⚠️ Article continuity: "
+            "شماره‌های پایه مواد ۰.۵ "
+            "دارای شکاف هستند"
+        )
 
-def print_document_validation(
+    failed = (
+        not status.git.is_clean
+        or status.git.behind > 0
+        or not all_documents_valid(
+            status
+        )
+        or bool(
+            missing_additional
+        )
+        or (
+            doc05_stats is not None
+            and not doc05_stats
+            .articles
+            .has_continuity
+        )
+    )
+
+    return int(
+        ExitCode.VALIDATION_FAILED
+        if failed
+        else ExitCode.OK
+    )
+
+
+def render_document_validation(
     status: ProjectStatus,
-) -> None:
+) -> int:
 
     print(
         "🔍 اعتبارسنجی اسناد"
@@ -2473,648 +4565,574 @@ def print_document_validation(
 
     print()
 
+    failed = False
+
     for (
         name,
         doc,
-    ) in status.documents.items():
+    ) in (
+        status.documents.items()
+    ):
+
+        if (
+            doc.status
+            == DocumentStatus.COMPLETE
+        ):
+            icon = "✅"
+
+        elif (
+            doc.status
+            == DocumentStatus.PUBLISHED
+        ):
+            icon = "✅"
+
+        elif (
+            doc.status
+            == DocumentStatus.PLACEHOLDER
+        ):
+            icon = "⏳"
+            failed = True
+
+        elif (
+            doc.status
+            == DocumentStatus.INVALID
+        ):
+            icon = "❌"
+            failed = True
+
+        else:
+            icon = "⚠️"
+            failed = True
 
         print(
-            f"{document_icon(doc.status)} "
-            f"{name}"
-        )
-
-        print(
-            f"   وضعیت: "
+            f"{icon} "
+            f"{name}: "
             f"{doc.status.value}"
-        )
-
-        print(
-            f"   مسیر: "
-            f"{doc.path}"
-        )
-
-        print(
-            f"   اندازه: "
-            f"{doc.size_bytes} bytes"
-        )
-
-        print(
-            f"   خطوط: "
-            f"{doc.lines}"
         )
 
         if (
             doc.articles_count
             is not None
         ):
-
             print(
-                f"   مواد: "
+                "   مواد: "
                 f"{doc.detected_articles}/"
                 f"{doc.articles_count}"
             )
 
-        if doc.duplicate_articles:
-
-            print(
-                "   مواد تکراری: "
-                + ", ".join(
-                    doc.duplicate_articles
-                )
-            )
-
-        if doc.missing_additional:
-
-            print(
-                "   مواد الحاقی مفقود: "
-                + ", ".join(
-                    doc.missing_additional
-                )
-            )
+        print(
+            f"   "
+            f"{doc.size_bytes} bytes | "
+            f"{doc.lines} lines"
+        )
 
         if doc.description:
-
             print(
-                f"   توضیح: "
+                f"   "
                 f"{doc.description}"
             )
 
         print()
 
-    missing = (
-        get_missing_v05_articles(
-            status
-        )
-    )
-
     print(
-        "مواد مستقل افزوده‌شده در ۰.۵:"
+        "📊 آمار مواد"
     )
 
-    if missing:
+    for (
+        name,
+        stats,
+    ) in (
+        status
+        .document_stats
+        .items()
+    ):
 
         print(
-            "❌ مفقود: "
-            + ", ".join(
-                missing
+            f"  {name}:"
+        )
+
+        print(
+            "      مواد شناسایی‌شده: "
+            f"{stats.articles.total_detected}"
+        )
+
+        if (
+            stats
+            .articles
+            .duplicates
+        ):
+            print(
+                "      تکراری: "
+                + ", ".join(
+                    stats
+                    .articles
+                    .duplicates
+                )
+            )
+
+        if (
+            stats
+            .articles
+            .out_of_order
+        ):
+            print(
+                "      خارج از ترتیب: "
+                + ", ".join(
+                    stats
+                    .articles
+                    .out_of_order
+                )
+            )
+
+        print(
+            "      پیوستگی شماره‌های پایه: "
+            + (
+                "✅"
+                if stats
+                .articles
+                .has_continuity
+                else "❌"
             )
         )
 
-    else:
+    return int(
+        ExitCode.VALIDATION_FAILED
+        if failed
+        else ExitCode.OK
+    )
+
+
+def render_history(
+    collector: GitInfoCollector,
+) -> int:
+
+    tags = (
+        collector
+        .get_tags_history()
+    )
+
+    if not tags:
+        print(
+            "ℹ️ هیچ Tagی "
+            "یافت نشد."
+        )
+
+        return int(
+            ExitCode.OK
+        )
+
+    print(
+        "🏷 تاریخچه نسخه‌ها / Tags"
+    )
+
+    print()
+
+    for (
+        index,
+        tag,
+    ) in enumerate(
+        tags,
+        start=1,
+    ):
+        print(
+            f"{index}. "
+            f"{tag.name}"
+        )
 
         print(
-            "✅ هر ۱۲ ماده موجود است."
+            f"   Commit: "
+            f"{tag.commit}"
         )
 
+        if tag.date:
+            print(
+                f"   Date: "
+                f"{tag.date}"
+            )
 
-# ============================================================
-# Output Directory
-# ============================================================
+        if tag.tagger:
+            print(
+                f"   Tagger: "
+                f"{tag.tagger}"
+            )
 
-def resolve_output_dir(
-    repo_path: Path,
-    output_dir_arg: Optional[str],
-) -> Path:
+        if tag.message:
+            print(
+                f"   Message: "
+                f"{tag.message}"
+            )
 
-    if not output_dir_arg:
+        print()
 
-        return repo_path
-
-    raw = Path(
-        output_dir_arg
-    ).expanduser()
-
-    if raw.is_absolute():
-
-        output_dir = raw.resolve()
-
-    else:
-
-        output_dir = (
-            repo_path
-            / raw
-        ).resolve()
-
-    return output_dir
-
-
-def ensure_output_dir(
-    output_dir: Path,
-    logger: VerboseLogger,
-) -> None:
-
-    logger.log(
-        f"Output directory: {output_dir}"
+    return int(
+        ExitCode.OK
     )
-
-    try:
-
-        output_dir.mkdir(
-            parents=True,
-            exist_ok=True,
-        )
-
-    except OSError as exc:
-
-        raise RuntimeError(
-            f"امکان ایجاد مسیر خروجی وجود ندارد:\n"
-            f"{output_dir}\n"
-            f"{exc}"
-        ) from exc
-
-
-# ============================================================
-# CLI
-# ============================================================
-
-def parse_args() -> argparse.Namespace:
-
-    parser = argparse.ArgumentParser(
-
-        description=(
-            "ابزار وضعیت، اعتبارسنجی، "
-            "تاریخچه و مقایسه پروژه نظم داد"
-        ),
-
-        epilog=(
-            "Git، validation، history و diff فقط خواندنی‌اند. "
-            "فقط --markdown و --json فایل خروجی می‌نویسند."
-        ),
-
-    )
-
-    parser.add_argument(
-        "--version",
-
-        action="version",
-
-        version=(
-            f"%(prog)s {VERSION}"
-        ),
-    )
-
-    parser.add_argument(
-        "--path",
-
-        type=str,
-
-        default=".",
-
-        help=(
-            "مسیر مخزن Git "
-            "(پیش‌فرض: پوشه فعلی)"
-        ),
-    )
-
-    parser.add_argument(
-        "--output-dir",
-
-        type=str,
-
-        default=None,
-
-        help=(
-            "مسیر ذخیره STATUS.md یا status.json. "
-            "برای --markdown و --json کاربرد دارد."
-        ),
-    )
-
-    parser.add_argument(
-        "--verbose",
-
-        action="store_true",
-
-        help=(
-            "نمایش جزئیات بیشتر درباره مراحل اجرا"
-        ),
-    )
-
-    parser.add_argument(
-        "--no-color",
-
-        action="store_true",
-
-        help=(
-            "غیرفعال کردن رنگ ANSI در خروجی diff"
-        ),
-    )
-
-    mode = (
-        parser
-        .add_mutually_exclusive_group()
-    )
-
-    mode.add_argument(
-        "--check",
-
-        action="store_true",
-
-        help=(
-            "نمایش خلاصه سریع وضعیت"
-        ),
-    )
-
-    mode.add_argument(
-        "--validate-docs",
-
-        action="store_true",
-
-        help=(
-            "اعتبارسنجی اسناد پروژه"
-        ),
-    )
-
-    mode.add_argument(
-        "--history",
-
-        action="store_true",
-
-        help=(
-            "نمایش تاریخچه Tagها و commit مرتبط"
-        ),
-    )
-
-    mode.add_argument(
-        "--markdown",
-
-        action="store_true",
-
-        help=(
-            "تولید STATUS.md"
-        ),
-    )
-
-    mode.add_argument(
-        "--json",
-
-        action="store_true",
-
-        help=(
-            "تولید status.json"
-        ),
-    )
-
-    mode.add_argument(
-        "--diff",
-
-        nargs=2,
-
-        metavar=(
-            "FILE_A",
-            "FILE_B",
-        ),
-
-        help=(
-            "مقایسه دو فایل متنی"
-        ),
-    )
-
-    return parser.parse_args()
 
 
 # ============================================================
 # Main
 # ============================================================
 
-def main() -> None:
-
+def main() -> int:
     args = parse_args()
 
-    logger = VerboseLogger(
-        args.verbose
+    console = Console(
+        enable_color=(
+            not args.no_color
+        )
     )
 
-    repo_path = (
+    logger = VerboseLogger(
+        enabled=(
+            args.verbose
+        )
+    )
+
+    preliminary_repo = (
         Path(
-            args.path
+            args.path or "."
         )
         .expanduser()
         .resolve()
     )
 
-    logger.log(
-        f"Requested repository path: {repo_path}"
+    config = load_config(
+        args.config,
+        preliminary_repo,
+    )
+
+    repo_value = (
+        args.path
+        or config.repo_path
+        or "."
+    )
+
+    repo_path = (
+        Path(repo_value)
+        .expanduser()
+        .resolve()
     )
 
     if not repo_path.exists():
-
         print(
-            "❌ مسیر وجود ندارد:\n"
+            f"❌ مسیر وجود ندارد: "
             f"{repo_path}",
             file=sys.stderr,
         )
 
-        sys.exit(1)
-
-    if not repo_path.is_dir():
-
-        print(
-            "❌ مسیر باید یک پوشه باشد:\n"
-            f"{repo_path}",
-            file=sys.stderr,
+        return int(
+            ExitCode.RUNTIME_ERROR
         )
-
-        sys.exit(1)
-
-    # --------------------------------------------------------
-    # Diff
-    # --------------------------------------------------------
-
-    if args.diff:
-
-        first_arg = Path(
-            args.diff[0]
-        ).expanduser()
-
-        second_arg = Path(
-            args.diff[1]
-        ).expanduser()
-
-        first = (
-            first_arg.resolve()
-            if first_arg.is_absolute()
-            else (
-                repo_path
-                / first_arg
-            ).resolve()
-        )
-
-        second = (
-            second_arg.resolve()
-            if second_arg.is_absolute()
-            else (
-                repo_path
-                / second_arg
-            ).resolve()
-        )
-
-        logger.log(
-            f"Diff first file: {first}"
-        )
-
-        logger.log(
-            f"Diff second file: {second}"
-        )
-
-        try:
-
-            FileDiffRenderer(
-                use_color=(
-                    not args.no_color
-                )
-            ).render(
-                first,
-                second,
-            )
-
-        except RuntimeError as exc:
-
-            print(
-                f"❌ خطا:\n{exc}",
-                file=sys.stderr,
-            )
-
-            sys.exit(1)
-
-        return
-
-    # --------------------------------------------------------
-    # Git-only History
-    # --------------------------------------------------------
-
-    if args.history:
-
-        try:
-
-            collector = (
-                GitInfoCollector(
-                    repo_path,
-                    logger=logger,
-                )
-            )
-
-            history = (
-                collector
-                .get_tag_history()
-            )
-
-        except RuntimeError as exc:
-
-            print(
-                f"❌ خطا:\n{exc}",
-                file=sys.stderr,
-            )
-
-            sys.exit(1)
-
-        HistoryRenderer().render(
-            history
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Build project status
-    # --------------------------------------------------------
 
     try:
-
         builder = (
             ProjectStatusBuilder(
                 repo_path,
-                logger=logger,
+                logger,
+                config,
+                progress_enabled=(
+                    not args.no_progress
+                ),
             )
         )
 
-        status = (
-            builder.build()
+        status = builder.build()
+
+        actual_repo = Path(
+            status.git.repository_root
+            or repo_path
+        ).resolve()
+
+        if args.diff:
+            (
+                left_raw,
+                right_raw,
+            ) = args.diff
+
+            left = Path(
+                left_raw
+            )
+
+            right = Path(
+                right_raw
+            )
+
+            if not left.is_absolute():
+                left = (
+                    actual_repo
+                    / left
+                )
+
+            if not right.is_absolute():
+                right = (
+                    actual_repo
+                    / right
+                )
+
+            return DiffRenderer(
+                console
+            ).render(
+                left.resolve(),
+                right.resolve(),
+            )
+
+        if args.history:
+            return render_history(
+                builder.git_collector
+            )
+
+        if args.check:
+            return render_check(
+                status
+            )
+
+        if args.validate_docs:
+            return (
+                render_document_validation(
+                    status
+                )
+            )
+
+        link_checker = (
+            LinkChecker(
+                actual_repo,
+                builder
+                .doc_validator
+                .docs_path,
+                builder
+                .doc_validator,
+                logger,
+                progress_enabled=(
+                    not args.no_progress
+                ),
+            )
         )
 
-    except RuntimeError as exc:
+        if args.check_links:
+            report = (
+                link_checker.run()
+            )
 
+            ConsoleRenderer(
+                console
+            ).render_links(
+                report
+            )
+
+            return int(
+                ExitCode.VALIDATION_FAILED
+                if report.broken
+                else ExitCode.OK
+            )
+
+        if args.health:
+            link_report = (
+                link_checker.run()
+            )
+
+            health = (
+                HealthCalculator(
+                    status,
+                    link_report,
+                    config,
+                ).calculate()
+            )
+
+            ConsoleRenderer(
+                console
+            ).render_health(
+                health
+            )
+
+            return int(
+                ExitCode.OK
+                if (
+                    health.percent
+                    >= config
+                    .health_threshold_ok
+                )
+                else
+                ExitCode
+                .VALIDATION_FAILED
+            )
+
+        if (
+            args.markdown
+            or args.json
+            or args.html
+        ):
+            output_dir_value = (
+                args.output_dir
+                or config.output_dir
+            )
+
+            if output_dir_value:
+                output_dir = Path(
+                    output_dir_value
+                ).expanduser()
+
+                if (
+                    not output_dir
+                    .is_absolute()
+                ):
+                    output_dir = (
+                        actual_repo
+                        / output_dir
+                    )
+
+            else:
+                output_dir = (
+                    actual_repo
+                )
+
+            output_dir = (
+                output_dir.resolve()
+            )
+
+            logger.log(
+                "Output directory: "
+                f"{output_dir}"
+            )
+
+            output_dir.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            link_report = (
+                link_checker.run()
+            )
+
+            health = (
+                HealthCalculator(
+                    status,
+                    link_report,
+                    config,
+                ).calculate()
+            )
+
+            if args.markdown:
+                output = (
+                    output_dir
+                    / "STATUS.md"
+                )
+
+                output.write_text(
+                    MarkdownRenderer()
+                    .render(
+                        status,
+                        health,
+                    ),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+
+                print(
+                    "✅ STATUS.md "
+                    "ذخیره شد:\n"
+                    f"{output}"
+                )
+
+                return int(
+                    ExitCode.OK
+                )
+
+            if args.json:
+                output = (
+                    output_dir
+                    / "status.json"
+                )
+
+                output.write_text(
+                    JsonRenderer()
+                    .render(
+                        status,
+                        health,
+                    ),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+
+                print(
+                    "✅ status.json "
+                    "ذخیره شد:\n"
+                    f"{output}"
+                )
+
+                return int(
+                    ExitCode.OK
+                )
+
+            if args.html:
+                output = (
+                    output_dir
+                    / "dashboard.html"
+                )
+
+                output.write_text(
+                    HtmlRenderer()
+                    .render(
+                        status,
+                        health,
+                    ),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+
+                print(
+                    "✅ dashboard.html "
+                    "ذخیره شد:\n"
+                    f"{output}"
+                )
+
+                return int(
+                    ExitCode.OK
+                )
+
+        ConsoleRenderer(
+            console
+        ).render(
+            status
+        )
+
+        return int(
+            ExitCode.OK
+        )
+
+    except KeyboardInterrupt:
         print(
-            f"❌ خطا:\n{exc}",
+            "\n⚠️ عملیات توسط "
+            "کاربر متوقف شد.",
             file=sys.stderr,
         )
 
-        sys.exit(1)
-
-    # --------------------------------------------------------
-    # Validate
-    # --------------------------------------------------------
-
-    if args.validate_docs:
-
-        print_document_validation(
-            status
+        return int(
+            ExitCode.RUNTIME_ERROR
         )
 
-        return
-
-    # --------------------------------------------------------
-    # Markdown
-    # --------------------------------------------------------
-
-    if args.markdown:
-
-        output_dir = (
-            resolve_output_dir(
-                repo_path,
-                args.output_dir,
-            )
-        )
-
-        try:
-
-            ensure_output_dir(
-                output_dir,
-                logger,
-            )
-
-            output_path = (
-                output_dir
-                / "STATUS.md"
-            )
-
-            content = (
-                MarkdownRenderer()
-                .render(
-                    status
-                )
-            )
-
-            logger.log(
-                f"Writing Markdown to {output_path}"
-            )
-
-            output_path.write_text(
-                content + "\n",
-                encoding="utf-8",
-            )
-
-        except OSError as exc:
-
-            print(
-                f"❌ خطا هنگام نوشتن فایل:\n"
-                f"{exc}",
-                file=sys.stderr,
-            )
-
-            sys.exit(1)
-
-        except RuntimeError as exc:
-
-            print(
-                f"❌ خطا:\n{exc}",
-                file=sys.stderr,
-            )
-
-            sys.exit(1)
-
+    except RuntimeError as exc:
         print(
-            "✅ STATUS.md ساخته شد:"
+            f"❌ خطا: {exc}",
+            file=sys.stderr,
         )
 
+        return int(
+            ExitCode.RUNTIME_ERROR
+        )
+
+    except OSError as exc:
         print(
-            output_path
+            f"❌ خطای فایل/سیستم: "
+            f"{exc}",
+            file=sys.stderr,
         )
 
-        return
-
-    # --------------------------------------------------------
-    # JSON
-    # --------------------------------------------------------
-
-    if args.json:
-
-        output_dir = (
-            resolve_output_dir(
-                repo_path,
-                args.output_dir,
-            )
+        return int(
+            ExitCode.RUNTIME_ERROR
         )
 
-        try:
-
-            ensure_output_dir(
-                output_dir,
-                logger,
-            )
-
-            output_path = (
-                output_dir
-                / "status.json"
-            )
-
-            content = (
-                JsonRenderer()
-                .render(
-                    status
-                )
-            )
-
-            logger.log(
-                f"Writing JSON to {output_path}"
-            )
-
-            output_path.write_text(
-                content + "\n",
-                encoding="utf-8",
-            )
-
-        except OSError as exc:
-
-            print(
-                f"❌ خطا هنگام نوشتن فایل:\n"
-                f"{exc}",
-                file=sys.stderr,
-            )
-
-            sys.exit(1)
-
-        except RuntimeError as exc:
-
-            print(
-                f"❌ خطا:\n{exc}",
-                file=sys.stderr,
-            )
-
-            sys.exit(1)
-
-        print(
-            "✅ status.json ساخته شد:"
-        )
-
-        print(
-            output_path
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Quick Check
-    # --------------------------------------------------------
-
-    if args.check:
-
-        print_quick_check(
-            status
-        )
-
-        return
-
-    # --------------------------------------------------------
-    # Full report
-    # --------------------------------------------------------
-
-    ConsoleRenderer().render(
-        status
-    )
-
-
-# ============================================================
-# Entry Point
-# ============================================================
 
 if __name__ == "__main__":
-    main()
+    sys.exit(
+        main()
+    )
