@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://13640226.github.io/nazm-dad/sitemap.xml
