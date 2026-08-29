@@ -5,35 +5,21 @@
 Nazm Dad — Project Status & Documentation Tool (extension layer)
 نظم داد — ابزار وضعیت، اعتبارسنجی و مستندسازی پروژه (لایهٔ extension)
 
-Version: 2.9
+Version: 3.1
 
-قابلیت‌های جدید v2.9
+قابلیت‌های جدید v3.1
 --------------------
-- --report: تولید گزارش جامع شامل doctor و health
-- --watch: نظارت بر تغییرات فایل‌ها با اجرای خودکار
-- --threshold: تنظیم آستانه Health Score برای CI/CD
-- --compare: مقایسه وضعیت فعلی با یک ref
-- --format: خروجی به JSON/YAML/CSV
-- --dry-run: پیش‌نمایش auto-fix بدون نوشتن فایل
-- --auto-fix: ایجاد فایل‌های توصیه‌شده مفقود (بدون محتوای حقوقی)
+- --validate-articles: اعتبارسنجی ساختار، شماره‌گذاری و توالی مواد
+- --check-links: بررسی لینک‌های شکسته در اسناد (جدا از strict)
+- --html-report: تولید گزارش HTML کامل با نمودارهای وضعیت (alias: --ci-html)
+- --output: ذخیره خروجی در فایل برای فرمت‌های ساختاریافته
+- --quiet: کاهش خروجی (در Watch فقط تغییرات را نشان می‌دهد)
+- بهبود --summary: نمایش خلاصهٔ خوانا از Git، اسناد و Health
+- بهبود --report: اضافه شدن آمار تفصیلی مواد
+- پشتیبانی از --format json/yaml/csv در دستورات خروجی‌محور
+- بهبود سرعت با بهینه‌سازی اسکن فایل‌ها
 
-قابلیت‌های موجود از v2.7/v2.8 حفظ شده‌اند:
-- --doctor / --doctor-json
-- --repair-preview / --repair-from-ref / --repair-source-dir
-- --hash-manifest / --verify-hashes
-- --ci-json / --ci-strict
-- --strict / --strict-timeout
-
-نکته Windows / UTF-8
----------------------
-برای جلوگیری از خطای:
-
-    'charmap' codec can't encode character
-
-فرآیندهای Python فرزند با این متغیرهای محیطی اجرا می‌شوند:
-
-    PYTHONIOENCODING=utf-8
-    PYTHONUTF8=1
+قابلیت‌های موجود از v2.7/v2.8/v2.9/v3.0 حفظ شده‌اند.
 """
 
 from __future__ import annotations
@@ -41,31 +27,29 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import html
 import json
 import os
 import re
 import subprocess
 import sys
 import time
-
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 
 # ============================================================
 # Version & Constants
 # ============================================================
 
-TOOL_VERSION = "2.9"
-
+TOOL_VERSION = "3.1"
 DEFAULT_CORE = "nazm_dad_project_status.py"
-
 STRICT_TIMEOUT_SECONDS = 120.0
 TIMEOUT_EXIT_CODE = 124
-
 DEFAULT_MANIFEST = ".nazm-dad-hashes.json"
+DEFAULT_CONFIG = ".nazm-dad-config.json"
 
 DEFAULT_REPAIR_FILES: Tuple[str, ...] = (
     "docs/0.4.md",
@@ -138,6 +122,45 @@ class StrictResult:
     duration_seconds: float
 
 
+@dataclass
+class ArticleValidation:
+    file: str
+    total_expected: int
+    total_found: int
+    ids: List[str]
+    missing: List[str]
+    duplicates: List[str]
+    out_of_order: List[str]
+    has_continuity: bool
+    is_valid: bool
+
+
+@dataclass
+class ProjectSummary:
+    branch: str
+    is_clean: bool
+    commit: str
+    commit_date: str
+    total_documents: int
+    valid_documents: int
+    placeholder_documents: int
+    invalid_documents: int
+    total_articles: int
+    health_score: Optional[int] = None
+    health_grade: Optional[str] = None
+    changes_ahead: int = 0
+    changes_behind: int = 0
+
+
+@dataclass
+class LinkCheckResult:
+    file: str
+    line: int
+    target: str
+    status: str
+    description: str
+
+
 # ============================================================
 # General Helpers
 # ============================================================
@@ -148,18 +171,14 @@ def utc_timestamp() -> str:
 
 def normalize_rel_path(value: str) -> str:
     value = value.replace("\\", "/").strip()
-
     while value.startswith("./"):
         value = value[2:]
-
     return value
 
 
 def rel(path: Path, base: Path) -> str:
     try:
-        return path.resolve().relative_to(
-            base.resolve()
-        ).as_posix()
+        return path.resolve().relative_to(base.resolve()).as_posix()
     except ValueError:
         return str(path.resolve())
 
@@ -178,10 +197,6 @@ def find_repo(start: Path) -> Path:
 
 
 def safe_repo_path(repo: Path, relative: str) -> Path:
-    """
-    مسیر نسبی پروژه را resolve می‌کند و اجازه نمی‌دهد
-    مسیر از repository خارج شود.
-    """
     normalized = normalize_rel_path(relative)
 
     if not normalized:
@@ -201,18 +216,163 @@ def safe_repo_path(repo: Path, relative: str) -> Path:
 
 
 def child_python_env() -> Dict[str, str]:
-    """
-    Environment مناسب subprocessهای Python.
-
-    روی Windows این بخش برای جلوگیری از خطای charmap
-    هنگام چاپ فارسی یا emoji ضروری است.
-    """
     env = os.environ.copy()
-
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
-
     return env
+
+
+def configure_utf8_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+
+        if not callable(reconfigure):
+            continue
+
+        try:
+            reconfigure(
+                encoding="utf-8",
+                errors="replace",
+            )
+        except (OSError, ValueError):
+            pass
+
+
+def load_config(
+    config_path: Optional[Path],
+) -> Dict[str, Any]:
+
+    if config_path is None:
+        config_path = Path(DEFAULT_CONFIG)
+
+    if not config_path.exists():
+        return {}
+
+    try:
+        data = json.loads(
+            config_path.read_text(
+                encoding="utf-8",
+            )
+        )
+
+        if isinstance(data, dict):
+            return data
+
+    except (OSError, json.JSONDecodeError):
+        pass
+
+    return {}
+
+
+def write_output(
+    content: str,
+    output_path: Optional[Path],
+) -> bool:
+
+    if output_path is None:
+        print(content)
+        return True
+
+    try:
+        output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        output_path.write_text(
+            content,
+            encoding="utf-8",
+        )
+
+        print(
+            f"✅ Output written to: {output_path}"
+        )
+
+        return True
+
+    except OSError as exc:
+        print(
+            f"❌ Failed to write output: {exc}",
+            file=sys.stderr,
+        )
+        return False
+
+
+def format_output(
+    data: Dict[str, Any],
+    fmt: str,
+) -> str:
+
+    if fmt == "json":
+        return json.dumps(
+            data,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+    if fmt == "yaml":
+        try:
+            import yaml
+        except ImportError as exc:
+            raise RuntimeError(
+                "PyYAML is not installed. "
+                "Please install: pip install pyyaml"
+            ) from exc
+
+        return yaml.dump(
+            data,
+            allow_unicode=True,
+            default_flow_style=False,
+            sort_keys=False,
+        )
+
+    if fmt == "csv":
+        import io
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        writer.writerow(
+            ["key", "value"]
+        )
+
+        def flatten(
+            value: Any,
+            parent: str = "",
+        ) -> None:
+
+            if isinstance(value, dict):
+                for key, child in value.items():
+                    flatten(
+                        child,
+                        f"{parent}{key}.",
+                    )
+
+            elif isinstance(value, list):
+                writer.writerow(
+                    [
+                        parent.rstrip("."),
+                        json.dumps(
+                            value,
+                            ensure_ascii=False,
+                        ),
+                    ]
+                )
+
+            else:
+                writer.writerow(
+                    [
+                        parent.rstrip("."),
+                        str(value),
+                    ]
+                )
+
+        flatten(data)
+        return output.getvalue()
+
+    raise ValueError(
+        f"Unsupported format: {fmt}"
+    )
 
 
 # ============================================================
@@ -229,9 +389,13 @@ def git_available() -> bool:
             errors="replace",
             timeout=10,
         )
+
         return proc.returncode == 0
 
-    except (OSError, subprocess.TimeoutExpired):
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
         return False
 
 
@@ -272,7 +436,40 @@ def git_commit(repo: Path) -> str:
         if proc.returncode == 0:
             return proc.stdout.strip()
 
-    except (OSError, subprocess.TimeoutExpired):
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
+        pass
+
+    return ""
+
+
+def git_commit_short(repo: Path) -> str:
+    commit = git_commit(repo)
+
+    return commit[:8] if commit else ""
+
+
+def git_commit_date(repo: Path) -> str:
+    try:
+        proc = git_run(
+            repo,
+            [
+                "log",
+                "-1",
+                "--format=%ai",
+            ],
+            timeout=15,
+        )
+
+        if proc.returncode == 0:
+            return proc.stdout.strip()
+
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
         pass
 
     return ""
@@ -282,20 +479,29 @@ def git_branch(repo: Path) -> str:
     try:
         proc = git_run(
             repo,
-            ["branch", "--show-current"],
+            [
+                "branch",
+                "--show-current",
+            ],
             timeout=15,
         )
 
         if proc.returncode == 0:
             return proc.stdout.strip()
 
-    except (OSError, subprocess.TimeoutExpired):
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
         pass
 
     return ""
 
 
-def git_upstream(repo: Path) -> Optional[str]:
+def git_upstream(
+    repo: Path,
+) -> Optional[str]:
+
     try:
         proc = git_run(
             repo,
@@ -312,30 +518,92 @@ def git_upstream(repo: Path) -> Optional[str]:
             value = proc.stdout.strip()
             return value or None
 
-    except (OSError, subprocess.TimeoutExpired):
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
         pass
 
     return None
 
 
-def git_is_clean(repo: Path) -> Optional[bool]:
+def git_is_clean(
+    repo: Path,
+) -> Optional[bool]:
+
     try:
         proc = git_run(
             repo,
-            ["status", "--porcelain"],
+            [
+                "status",
+                "--porcelain",
+            ],
             timeout=15,
         )
 
         if proc.returncode == 0:
-            return not bool(proc.stdout.strip())
+            return not bool(
+                proc.stdout.strip()
+            )
 
-    except (OSError, subprocess.TimeoutExpired):
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
         pass
 
     return None
 
 
-def git_ref_exists(repo: Path, ref: str) -> bool:
+def git_ahead_behind(
+    repo: Path,
+) -> Tuple[int, int]:
+
+    upstream = git_upstream(repo)
+
+    if not upstream:
+        return 0, 0
+
+    try:
+        proc = git_run(
+            repo,
+            [
+                "rev-list",
+                "--left-right",
+                "--count",
+                f"HEAD...{upstream}",
+            ],
+            timeout=15,
+        )
+
+        if proc.returncode == 0:
+            parts = (
+                proc.stdout
+                .strip()
+                .split()
+            )
+
+            if len(parts) == 2:
+                return (
+                    int(parts[0]),
+                    int(parts[1]),
+                )
+
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+        ValueError,
+    ):
+        pass
+
+    return 0, 0
+
+
+def git_ref_exists(
+    repo: Path,
+    ref: str,
+) -> bool:
+
     try:
         proc = git_run(
             repo,
@@ -350,20 +618,85 @@ def git_ref_exists(repo: Path, ref: str) -> bool:
 
         return proc.returncode == 0
 
-    except (OSError, subprocess.TimeoutExpired):
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
         return False
+
+
+def git_file_history(
+    repo: Path,
+    file_path: str,
+    max_count: int = 10,
+) -> List[Dict[str, str]]:
+
+    try:
+        proc = git_run(
+            repo,
+            [
+                "log",
+                f"-{max_count}",
+                "--format=%h|%ai|%s",
+                "--",
+                file_path,
+            ],
+            timeout=15,
+        )
+
+        if proc.returncode != 0:
+            return []
+
+        entries: List[
+            Dict[str, str]
+        ] = []
+
+        for line in (
+            proc.stdout
+            .strip()
+            .splitlines()
+        ):
+            if not line:
+                continue
+
+            parts = line.split(
+                "|",
+                2,
+            )
+
+            if len(parts) >= 3:
+                entries.append(
+                    {
+                        "commit": parts[0],
+                        "date": parts[1],
+                        "message": parts[2],
+                    }
+                )
+
+        return entries
+
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
+        return []
 
 
 # ============================================================
 # File / Hash Helpers
 # ============================================================
 
-def sha256_file(path: Path) -> str:
+def sha256_file(
+    path: Path,
+) -> str:
+
     digest = hashlib.sha256()
 
     with path.open("rb") as handle:
         while True:
-            chunk = handle.read(1024 * 1024)
+            chunk = handle.read(
+                1024 * 1024
+            )
 
             if not chunk:
                 break
@@ -373,17 +706,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def extract_health_score(text: str) -> Optional[int]:
-    """
-    استخراج Health Score از خروجی متنی core.
+def extract_health_score(
+    text: str,
+) -> Optional[int]:
 
-    نمونه‌های پشتیبانی‌شده:
-
-        80/100
-        score: 80
-        score=80
-        امتیاز: 80
-    """
     patterns = (
         r"(\d+)\s*/\s*100",
         r"score\s*[:=]\s*(\d+)",
@@ -401,8 +727,13 @@ def extract_health_score(text: str) -> Optional[int]:
             continue
 
         try:
-            value = int(match.group(1))
-        except (TypeError, ValueError):
+            value = int(
+                match.group(1)
+            )
+        except (
+            TypeError,
+            ValueError,
+        ):
             continue
 
         if 0 <= value <= 100:
@@ -411,47 +742,70 @@ def extract_health_score(text: str) -> Optional[int]:
     return None
 
 
+def extract_health_grade(
+    score: Optional[int],
+) -> str:
+
+    if score is None:
+        return "N/A"
+
+    if score >= 95:
+        return "A+"
+
+    if score >= 90:
+        return "A"
+
+    if score >= 80:
+        return "B"
+
+    if score >= 70:
+        return "C"
+
+    if score >= 60:
+        return "D"
+
+    return "F"
+
+
 # ============================================================
-# Core Path
+# Core Path & Execution
 # ============================================================
 
-def core_path(repo: Path, core: str) -> Path:
-    """
-    مسیر core را resolve می‌کند.
+def core_path(
+    repo: Path,
+    core: str,
+) -> Path:
 
-    - مسیر absolute مجاز است.
-    - مسیر relative باید داخل repository باشد.
-    """
-    candidate = Path(core).expanduser()
+    candidate = (
+        Path(core)
+        .expanduser()
+    )
 
     if candidate.is_absolute():
         return candidate.resolve()
 
-    return safe_repo_path(repo, core)
+    return safe_repo_path(
+        repo,
+        core,
+    )
 
-
-# ============================================================
-# Core Execution
-# ============================================================
 
 def run_core(
     repo: Path,
     core: str,
     args: Sequence[str],
     *,
-    timeout_seconds: Optional[float] = None,
+    timeout_seconds: Optional[
+        float
+    ] = None,
     quiet: bool = False,
 ) -> int:
-    """
-    اجرای core.
-
-    quiet=True برای CI باعث capture شدن stdout/stderr می‌شود.
-    UTF-8 نیز داخل child process اجباری می‌شود.
-    """
 
     try:
-        path = core_path(repo, core)
-
+        path = core_path(
+            repo,
+            core,
+        )
     except ValueError as exc:
         if not quiet:
             print(
@@ -490,49 +844,49 @@ def run_core(
             command,
             cwd=str(repo),
             timeout=timeout_seconds,
-
             stdout=(
                 subprocess.PIPE
                 if quiet
                 else None
             ),
-
             stderr=(
                 subprocess.PIPE
                 if quiet
                 else None
             ),
-
             text=quiet,
-
             encoding=(
                 "utf-8"
                 if quiet
                 else None
             ),
-
             errors=(
                 "replace"
                 if quiet
                 else None
             ),
-
             env=child_python_env(),
         )
 
-        return int(proc.returncode)
+        return int(
+            proc.returncode
+        )
 
     except subprocess.TimeoutExpired:
         if not quiet:
             timeout_text = (
                 f"{timeout_seconds:.1f}s"
-                if timeout_seconds is not None
+                if timeout_seconds
+                is not None
                 else "configured timeout"
             )
 
             print(
-                f"⏱️ TIMEOUT after {timeout_text}: "
-                f"{' '.join(command)}",
+                (
+                    f"⏱️ TIMEOUT after "
+                    f"{timeout_text}: "
+                    f"{' '.join(command)}"
+                ),
                 file=sys.stderr,
             )
 
@@ -550,7 +904,10 @@ def run_core(
     except OSError as exc:
         if not quiet:
             print(
-                f"❌ failed to execute core script: {exc}",
+                (
+                    "❌ failed to execute "
+                    f"core script: {exc}"
+                ),
                 file=sys.stderr,
             )
 
@@ -562,15 +919,15 @@ def capture_core(
     core: str,
     args: Sequence[str],
     *,
-    timeout_seconds: Optional[float] = None,
+    timeout_seconds: Optional[
+        float
+    ] = None,
 ) -> subprocess.CompletedProcess:
-    """
-    اجرای core و گرفتن stdout/stderr به UTF-8.
 
-    PYTHONIOENCODING و PYTHONUTF8 برای Windows مهم هستند.
-    """
-
-    path = core_path(repo, core)
+    path = core_path(
+        repo,
+        core,
+    )
 
     if not path.exists():
         raise FileNotFoundError(
@@ -607,18 +964,16 @@ def doctor(
     core: str,
 ) -> DoctorReport:
 
-    checks: List[DoctorCheck] = []
-
-    # --------------------------------------------------------
-    # Python
-    # --------------------------------------------------------
+    checks: List[
+        DoctorCheck
+    ] = []
 
     checks.append(
         DoctorCheck(
             name="python",
             ok=True,
             detail=(
-                f"python: "
+                "python: "
                 f"{sys.version_info.major}."
                 f"{sys.version_info.minor}."
                 f"{sys.version_info.micro} "
@@ -627,14 +982,13 @@ def doctor(
         )
     )
 
-    # --------------------------------------------------------
-    # Git
-    # --------------------------------------------------------
-
     if git_available():
         try:
             proc = subprocess.run(
-                ["git", "--version"],
+                [
+                    "git",
+                    "--version",
+                ],
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -646,7 +1000,10 @@ def doctor(
                 DoctorCheck(
                     name="git",
                     ok=True,
-                    detail=proc.stdout.strip(),
+                    detail=(
+                        proc.stdout
+                        .strip()
+                    ),
                 )
             )
 
@@ -654,11 +1011,14 @@ def doctor(
             OSError,
             subprocess.TimeoutExpired,
         ) as exc:
+
             checks.append(
                 DoctorCheck(
                     name="git",
                     ok=False,
-                    detail=f"git error: {exc}",
+                    detail=(
+                        f"git error: {exc}"
+                    ),
                 )
             )
 
@@ -667,15 +1027,16 @@ def doctor(
             DoctorCheck(
                 name="git",
                 ok=False,
-                detail="git executable not available",
+                detail=(
+                    "git executable "
+                    "not available"
+                ),
             )
         )
 
-    # --------------------------------------------------------
-    # Repository
-    # --------------------------------------------------------
-
-    is_repo = (repo / ".git").exists()
+    is_repo = (
+        repo / ".git"
+    ).exists()
 
     checks.append(
         DoctorCheck(
@@ -684,10 +1045,6 @@ def doctor(
             detail=f"repository: {repo}",
         )
     )
-
-    # --------------------------------------------------------
-    # Core
-    # --------------------------------------------------------
 
     try:
         core_file = core_path(
@@ -701,45 +1058,61 @@ def doctor(
                 name="core-script",
                 ok=False,
                 detail=(
-                    f"core-script: invalid path: {exc}"
+                    "core-script: "
+                    f"invalid path: {exc}"
                 ),
             )
         )
 
     else:
-        if core_file.exists() and core_file.is_file():
+        if (
+            core_file.exists()
+            and core_file.is_file()
+        ):
             try:
-                compile_proc = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "py_compile",
-                        str(core_file),
-                    ],
-                    cwd=str(repo),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=30,
-                    env=child_python_env(),
+                compile_proc = (
+                    subprocess.run(
+                        [
+                            sys.executable,
+                            "-m",
+                            "py_compile",
+                            str(core_file),
+                        ],
+                        cwd=str(repo),
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=30,
+                        env=child_python_env(),
+                    )
                 )
 
-                if compile_proc.returncode == 0:
+                if (
+                    compile_proc.returncode
+                    == 0
+                ):
                     checks.append(
                         DoctorCheck(
                             name="core-script",
                             ok=True,
-                            detail="core-script: syntax OK",
+                            detail=(
+                                "core-script: "
+                                "syntax OK"
+                            ),
                         )
                     )
 
                 else:
                     detail = (
-                        compile_proc.stderr.strip()
-                        or compile_proc.stdout.strip()
+                        compile_proc
+                        .stderr
+                        .strip()
+                        or compile_proc
+                        .stdout
+                        .strip()
                         or (
-                            f"exit="
+                            "exit="
                             f"{compile_proc.returncode}"
                         )
                     )
@@ -750,7 +1123,8 @@ def doctor(
                             ok=False,
                             detail=(
                                 "core-script: "
-                                f"syntax error: {detail}"
+                                "syntax error: "
+                                f"{detail}"
                             ),
                         )
                     )
@@ -761,8 +1135,9 @@ def doctor(
                         name="core-script",
                         ok=False,
                         detail=(
-                            "core-script: syntax check "
-                            "timed out after 30s"
+                            "core-script: "
+                            "syntax check timed "
+                            "out after 30s"
                         ),
                     )
                 )
@@ -773,8 +1148,10 @@ def doctor(
                         name="core-script",
                         ok=False,
                         detail=(
-                            "core-script: unable to run "
-                            f"syntax check: {exc}"
+                            "core-script: "
+                            "unable to run "
+                            "syntax check: "
+                            f"{exc}"
                         ),
                     )
                 )
@@ -785,25 +1162,25 @@ def doctor(
                     name="core-script",
                     ok=False,
                     detail=(
-                        f"core-script missing: "
+                        "core-script missing: "
                         f"{core_file}"
                     ),
                 )
             )
 
-    # --------------------------------------------------------
-    # Git repository state
-    # --------------------------------------------------------
-
     if is_repo:
-        clean = git_is_clean(repo)
+        clean = git_is_clean(
+            repo
+        )
 
         if clean is True:
             checks.append(
                 DoctorCheck(
                     name="working-tree",
                     ok=True,
-                    detail="working-tree: clean",
+                    detail=(
+                        "working-tree: clean"
+                    ),
                 )
             )
 
@@ -813,7 +1190,9 @@ def doctor(
                     name="working-tree",
                     ok=True,
                     warning=True,
-                    detail="working-tree: dirty",
+                    detail=(
+                        "working-tree: dirty"
+                    ),
                 )
             )
 
@@ -829,7 +1208,9 @@ def doctor(
                 )
             )
 
-        branch = git_branch(repo)
+        branch = git_branch(
+            repo
+        )
 
         checks.append(
             DoctorCheck(
@@ -843,24 +1224,27 @@ def doctor(
             )
         )
 
-        upstream = git_upstream(repo)
+        upstream = git_upstream(
+            repo
+        )
 
         checks.append(
             DoctorCheck(
                 name="upstream",
                 ok=True,
-                warning=not bool(upstream),
+                warning=not bool(
+                    upstream
+                ),
                 detail=(
                     f"upstream: {upstream}"
                     if upstream
-                    else "upstream: not configured"
+                    else (
+                        "upstream: "
+                        "not configured"
+                    )
                 ),
             )
         )
-
-    # --------------------------------------------------------
-    # Documents
-    # --------------------------------------------------------
 
     docs = repo / "docs"
 
@@ -870,29 +1254,56 @@ def doctor(
                 name="docs",
                 ok=False,
                 detail=(
-                    f"docs directory missing: {docs}"
+                    "docs directory "
+                    f"missing: {docs}"
                 ),
             )
         )
 
     else:
         required = (
-            ("docs/0.4.md", 61),
-            ("docs/0.5.md", 73),
-            ("docs/changelog.md", None),
-            ("docs/rules.md", None),
-            ("docs/decisions.md", None),
+            (
+                "docs/0.4.md",
+                61,
+            ),
+            (
+                "docs/0.5.md",
+                73,
+            ),
+            (
+                "docs/changelog.md",
+                None,
+            ),
+            (
+                "docs/rules.md",
+                None,
+            ),
+            (
+                "docs/decisions.md",
+                None,
+            ),
         )
 
-        for relative, expected_articles in required:
-            target = repo / relative
+        for (
+            relative,
+            expected_articles,
+        ) in required:
+
+            target = (
+                repo / relative
+            )
 
             if not target.exists():
                 checks.append(
                     DoctorCheck(
-                        name=f"doc:{relative}",
+                        name=(
+                            f"doc:{relative}"
+                        ),
                         ok=False,
-                        detail=f"doc:{relative}: missing",
+                        detail=(
+                            f"doc:{relative}: "
+                            "missing"
+                        ),
                     )
                 )
 
@@ -901,7 +1312,9 @@ def doctor(
             if not target.is_file():
                 checks.append(
                     DoctorCheck(
-                        name=f"doc:{relative}",
+                        name=(
+                            f"doc:{relative}"
+                        ),
                         ok=False,
                         detail=(
                             f"doc:{relative}: "
@@ -921,11 +1334,14 @@ def doctor(
             except UnicodeDecodeError as exc:
                 checks.append(
                     DoctorCheck(
-                        name=f"doc:{relative}",
+                        name=(
+                            f"doc:{relative}"
+                        ),
                         ok=False,
                         detail=(
                             f"doc:{relative}: "
-                            f"invalid UTF-8: {exc}"
+                            "invalid UTF-8: "
+                            f"{exc}"
                         ),
                     )
                 )
@@ -935,7 +1351,9 @@ def doctor(
             except OSError as exc:
                 checks.append(
                     DoctorCheck(
-                        name=f"doc:{relative}",
+                        name=(
+                            f"doc:{relative}"
+                        ),
                         ok=False,
                         detail=(
                             f"doc:{relative}: "
@@ -948,12 +1366,17 @@ def doctor(
 
             if expected_articles is None:
                 try:
-                    size = target.stat().st_size
+                    size = (
+                        target.stat()
+                        .st_size
+                    )
 
                 except OSError as exc:
                     checks.append(
                         DoctorCheck(
-                            name=f"doc:{relative}",
+                            name=(
+                                f"doc:{relative}"
+                            ),
                             ok=False,
                             detail=(
                                 f"doc:{relative}: "
@@ -966,7 +1389,9 @@ def doctor(
 
                 checks.append(
                     DoctorCheck(
-                        name=f"doc:{relative}",
+                        name=(
+                            f"doc:{relative}"
+                        ),
                         ok=True,
                         detail=(
                             f"doc:{relative}: "
@@ -976,56 +1401,72 @@ def doctor(
                 )
 
             else:
-                token_count = text.count("ماده")
-
-                count_ok = (
-                    token_count >= expected_articles
+                token_count = (
+                    text.count("ماده")
                 )
 
-                # Heuristic only:
-                # insufficient count is warning,
-                # NOT hard validation failure.
+                count_ok = (
+                    token_count
+                    >= expected_articles
+                )
+
                 checks.append(
                     DoctorCheck(
-                        name=f"doc:{relative}",
+                        name=(
+                            f"doc:{relative}"
+                        ),
                         ok=True,
                         warning=not count_ok,
                         detail=(
                             f"doc:{relative}: "
-                            "rough article-token count="
-                            f"{token_count}; "
+                            "rough article-token "
+                            f"count={token_count}; "
                             "expected at least "
                             f"{expected_articles}"
                         ),
                     )
                 )
 
-    # --------------------------------------------------------
-    # Recommended files — warnings only
-    # --------------------------------------------------------
-
     recommended = (
         (
             ".gitignore",
-            ".gitignore missing (recommended)",
+            (
+                ".gitignore missing "
+                "(recommended)"
+            ),
         ),
         (
             "README.md",
-            "README.md missing (recommended)",
+            (
+                "README.md missing "
+                "(recommended)"
+            ),
         ),
         (
             "LICENSE",
-            "LICENSE missing (recommended)",
+            (
+                "LICENSE missing "
+                "(recommended)"
+            ),
         ),
         (
             "LICENSE-DOCS.md",
-            "LICENSE-DOCS.md missing "
-            "(recommended)",
+            (
+                "LICENSE-DOCS.md "
+                "missing (recommended)"
+            ),
         ),
     )
 
-    for filename, description in recommended:
-        if not (repo / filename).exists():
+    for (
+        filename,
+        description,
+    ) in recommended:
+
+        if not (
+            repo / filename
+        ).exists():
+
             checks.append(
                 DoctorCheck(
                     name=filename,
@@ -1036,7 +1477,10 @@ def doctor(
             )
 
     hard_failure = any(
-        not item.ok and not item.warning
+        (
+            not item.ok
+            and not item.warning
+        )
         for item in checks
     )
 
@@ -1051,11 +1495,16 @@ def print_doctor(
 ) -> None:
 
     print("=" * 72)
-    print(f"Nazm Dad — Doctor v{TOOL_VERSION}")
+    print(
+        f"Nazm Dad — Doctor v{TOOL_VERSION}"
+    )
     print("=" * 72)
 
     for item in report.checks:
-        if item.ok and not item.warning:
+        if (
+            item.ok
+            and not item.warning
+        ):
             icon = "✅"
 
         elif item.warning:
@@ -1064,9 +1513,12 @@ def print_doctor(
         else:
             icon = "❌"
 
-        print(f"{icon} {item.detail}")
+        print(
+            f"{icon} {item.detail}"
+        )
 
     print("=" * 72)
+
     print(
         "PASS"
         if report.ok
@@ -1082,17 +1534,23 @@ def doctor_payload(
 
     try:
         resolved_core = str(
-            core_path(repo, core)
+            core_path(
+                repo,
+                core,
+            )
         )
 
     except ValueError as exc:
         resolved_core = (
-            f"<invalid core path: {exc}>"
+            "<invalid core path: "
+            f"{exc}>"
         )
 
     return {
         "schema": 1,
-        "tool": "nazm-dad-project-status",
+        "tool": (
+            "nazm-dad-project-status"
+        ),
         "version": TOOL_VERSION,
         "timestamp": utc_timestamp(),
         "repo": str(repo),
@@ -1108,209 +1566,1121 @@ def doctor_payload(
 
 
 # ============================================================
-# Strict
+# Article Validation
 # ============================================================
 
-def run_strict(
-    repo: Path,
-    core: str,
-    *,
-    timeout_seconds: float = STRICT_TIMEOUT_SECONDS,
-    quiet: bool = False,
-    include_health: bool = True,
-) -> Tuple[
-    bool,
-    Dict[str, StrictResult],
-]:
+ARTICLE_PATTERN = re.compile(
+    r"^\s*\*\*ماده\s+"
+    r"([۰-۹0-9]+(?:[–—\-][۰-۹0-9]+)?)"
+    r"\s*[ـ–—-]",
+    re.MULTILINE,
+)
 
-    commands: Dict[str, List[str]] = {
-        "validate_docs": [
-            "--validate-docs",
-            "--no-progress",
-        ],
-        "check_links": [
-            "--check-links",
-            "--no-progress",
-        ],
-    }
 
-    if include_health:
-        commands["health"] = [
-            "--health",
-            "--no-progress",
-        ]
+def normalize_digits(
+    value: str,
+) -> str:
 
-    results: Dict[
-        str,
-        StrictResult,
-    ] = {}
-
-    for name, arguments in commands.items():
-        if not quiet:
-            print("=" * 72)
-            print(f"STRICT: {name}")
-            print("=" * 72)
-
-        started = time.monotonic()
-
-        code = run_core(
-            repo,
-            core,
-            arguments,
-            timeout_seconds=timeout_seconds,
-            quiet=quiet,
+    return value.translate(
+        str.maketrans(
+            (
+                "۰۱۲۳۴۵۶۷۸۹"
+                "٠١٢٣٤٥٦٧٨٩"
+            ),
+            (
+                "0123456789"
+                "0123456789"
+            ),
         )
+    )
 
-        elapsed = (
-            time.monotonic()
-            - started
+
+def normalize_article_id(
+    value: str,
+) -> str:
+
+    return (
+        normalize_digits(value)
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("−", "-")
+        .strip()
+    )
+
+
+def find_articles(
+    content: str,
+) -> List[str]:
+
+    return [
+        normalize_article_id(
+            match.group(1)
         )
-
-        results[name] = StrictResult(
-            exit_code=code,
-            duration_seconds=elapsed,
+        for match
+        in ARTICLE_PATTERN.finditer(
+            content
         )
+    ]
 
-        if not quiet:
-            if code == EXIT_OK:
-                print(
-                    f"✅ {name}: "
-                    f"exit=0 "
-                    f"({elapsed:.2f}s)"
-                )
 
-            elif code == TIMEOUT_EXIT_CODE:
-                print(
-                    f"⏱️ {name}: "
-                    f"TIMEOUT "
-                    f"({elapsed:.2f}s)"
-                )
+def validate_articles_in_file(
+    file_path: Path,
+    expected_count: Optional[int] = None,
+) -> ArticleValidation:
 
-            else:
-                print(
-                    f"❌ {name}: "
-                    f"exit={code} "
-                    f"({elapsed:.2f}s)"
-                )
-
-    # --------------------------------------------------------
-    # Doctor
-    # --------------------------------------------------------
-
-    if not quiet:
-        print("=" * 72)
-        print("STRICT: doctor")
-        print("=" * 72)
-
-    started = time.monotonic()
+    if not file_path.exists():
+        return ArticleValidation(
+            file=str(file_path),
+            total_expected=(
+                expected_count or 0
+            ),
+            total_found=0,
+            ids=[],
+            missing=[],
+            duplicates=[],
+            out_of_order=[],
+            has_continuity=False,
+            is_valid=False,
+        )
 
     try:
-        report = doctor(
-            repo,
-            core,
-        )
-
-        doctor_code = (
-            EXIT_OK
-            if report.ok
-            else EXIT_VALIDATION_FAILED
-        )
-
-    except KeyboardInterrupt:
-        doctor_code = EXIT_INTERRUPTED
-
-    except Exception as exc:
-        doctor_code = EXIT_RUNTIME_ERROR
-
-        if not quiet:
-            print(
-                f"❌ doctor failed: {exc}",
-                file=sys.stderr,
+        content = (
+            file_path.read_text(
+                encoding="utf-8",
+                errors="strict",
             )
+        )
 
-    elapsed = (
-        time.monotonic()
-        - started
+    except (
+        OSError,
+        UnicodeDecodeError,
+    ):
+        return ArticleValidation(
+            file=str(file_path),
+            total_expected=(
+                expected_count or 0
+            ),
+            total_found=0,
+            ids=[],
+            missing=[],
+            duplicates=[],
+            out_of_order=[],
+            has_continuity=False,
+            is_valid=False,
+        )
+
+    ids = find_articles(
+        content
     )
 
-    results["doctor"] = StrictResult(
-        exit_code=doctor_code,
-        duration_seconds=elapsed,
-    )
+    total_found = len(ids)
 
-    # --------------------------------------------------------
-    # Summary
-    # --------------------------------------------------------
+    seen: Set[str] = set()
+    duplicate_seen: Set[str] = set()
+    duplicates: List[str] = []
 
-    if not quiet:
-        print()
+    for aid in ids:
+        if (
+            aid in seen
+            and aid not in duplicate_seen
+        ):
+            duplicates.append(aid)
+            duplicate_seen.add(aid)
 
-        print("=" * 72)
-        print("STRICT SUMMARY")
-        print("=" * 72)
+        seen.add(aid)
 
-        ordered_names = [
-            *commands.keys(),
-            "doctor",
+    out_of_order: List[str] = []
+
+    if ids:
+        numeric: List[int] = []
+
+        for aid in ids:
+            try:
+                numeric.append(
+                    int(
+                        aid.split("-")[0]
+                    )
+                )
+            except ValueError:
+                numeric.append(-1)
+
+        for index in range(
+            1,
+            len(numeric),
+        ):
+            if (
+                numeric[index]
+                < numeric[index - 1]
+                and numeric[index]
+                != -1
+            ):
+                out_of_order.append(
+                    ids[index]
+                )
+
+    has_continuity = True
+
+    if ids and len(ids) > 1:
+        values: List[int] = []
+
+        for aid in ids:
+            try:
+                values.append(
+                    int(
+                        aid.split("-")[0]
+                    )
+                )
+            except ValueError:
+                values.append(-1)
+
+        valid_values = [
+            value
+            for value in values
+            if value >= 0
         ]
 
-        for name in ordered_names:
-            result = results[name]
-
-            if result.exit_code == EXIT_OK:
-                print(
-                    f"✅ {name}: "
-                    f"exit=0 "
-                    f"({result.duration_seconds:.2f}s)"
+        if valid_values:
+            has_continuity = (
+                set(
+                    range(
+                        min(valid_values),
+                        max(valid_values)
+                        + 1,
+                    )
                 )
+                == set(valid_values)
+            )
 
-            elif (
-                result.exit_code
-                == TIMEOUT_EXIT_CODE
-            ):
-                print(
-                    f"⏱️ {name}: "
-                    f"TIMEOUT "
-                    f"({result.duration_seconds:.2f}s)"
+    missing: List[str] = []
+
+    if expected_count is not None:
+        found_numeric: Set[int] = set()
+
+        for aid in ids:
+            if "-" in aid:
+                continue
+
+            try:
+                found_numeric.add(
+                    int(aid)
                 )
+            except ValueError:
+                pass
 
-            else:
-                print(
-                    f"❌ {name}: "
-                    f"exit={result.exit_code} "
-                    f"({result.duration_seconds:.2f}s)"
-                )
+        expected_numeric = set(
+            range(
+                1,
+                expected_count + 1,
+            )
+        )
 
-    success = all(
-        item.exit_code == EXIT_OK
-        for item in results.values()
+        missing_numeric = sorted(
+            expected_numeric
+            - found_numeric
+        )
+
+        missing = [
+            str(item)
+            for item in missing_numeric
+        ]
+
+    is_valid = (
+        (
+            expected_count is None
+            or not missing
+        )
+        and not duplicates
+        and not out_of_order
+        and has_continuity
     )
 
-    return success, results
+    return ArticleValidation(
+        file=str(file_path),
+        total_expected=(
+            expected_count or 0
+        ),
+        total_found=total_found,
+        ids=ids,
+        missing=missing,
+        duplicates=duplicates,
+        out_of_order=out_of_order,
+        has_continuity=(
+            has_continuity
+        ),
+        is_valid=is_valid,
+    )
 
 
-def strict_results_payload(
-    results: Dict[
-        str,
-        StrictResult,
+def validate_articles(
+    repo: Path,
+) -> List[ArticleValidation]:
+
+    results: List[
+        ArticleValidation
+    ] = []
+
+    doc_specs = {
+        "docs/0.4.md": 61,
+        "docs/0.5.md": 73,
+        "docs/changelog.md": None,
+        "docs/rules.md": None,
+        "docs/decisions.md": None,
+    }
+
+    for (
+        rel_path,
+        expected,
+    ) in doc_specs.items():
+
+        target = (
+            repo / rel_path
+        )
+
+        results.append(
+            validate_articles_in_file(
+                target,
+                expected,
+            )
+        )
+
+    return results
+
+
+def print_article_validation(
+    results: List[
+        ArticleValidation
+    ],
+) -> None:
+
+    print("=" * 72)
+    print(
+        "Nazm Dad — Article Validation"
+    )
+    print("=" * 72)
+
+    all_valid = True
+
+    for result in results:
+        status = (
+            "✅"
+            if result.is_valid
+            else "❌"
+        )
+
+        print(
+            f"\n{status} {result.file}"
+        )
+
+        print(
+            "   مواد یافت‌شده: "
+            f"{result.total_found}"
+        )
+
+        if result.total_expected:
+            print(
+                "   مواد مورد انتظار: "
+                f"{result.total_expected}"
+            )
+
+        if result.duplicates:
+            print(
+                "   ⚠️ تکراری: "
+                + ", ".join(
+                    result.duplicates
+                )
+            )
+            all_valid = False
+
+        if result.out_of_order:
+            print(
+                "   ⚠️ خارج از ترتیب: "
+                + ", ".join(
+                    result.out_of_order
+                )
+            )
+            all_valid = False
+
+        if (
+            result.missing
+            and result.total_expected
+        ):
+            print(
+                "   ⚠️ مفقود: "
+                + ", ".join(
+                    result.missing[:10]
+                )
+            )
+
+            if len(
+                result.missing
+            ) > 10:
+
+                print(
+                    "      ... و "
+                    f"{len(result.missing) - 10} "
+                    "مورد دیگر"
+                )
+
+            all_valid = False
+
+        if (
+            not result.has_continuity
+            and result.total_found > 1
+        ):
+            print(
+                "   ⚠️ ترتیب مواد "
+                "پیوسته نیست"
+            )
+
+            all_valid = False
+
+        if result.is_valid:
+            print(
+                "   ✅ ساختار مواد صحیح است"
+            )
+
+    print(
+        "\n" + "=" * 72
+    )
+
+    print(
+        (
+            "✅ همه اسناد معتبر هستند"
+            if all_valid
+            else (
+                "❌ برخی اسناد "
+                "مشکل دارند"
+            )
+        )
+    )
+
+
+def article_validation_payload(
+    results: List[
+        ArticleValidation
     ],
 ) -> Dict[str, Any]:
 
     return {
-        name: {
-            "exit_code": result.exit_code,
-            "duration_seconds": round(
-                result.duration_seconds,
-                6,
-            ),
-            "timed_out": (
-                result.exit_code
-                == TIMEOUT_EXIT_CODE
-            ),
-        }
-        for name, result
-        in results.items()
+        "schema": 1,
+        "tool": (
+            "nazm-dad-project-status"
+        ),
+        "version": TOOL_VERSION,
+        "timestamp": utc_timestamp(),
+        "results": [
+            asdict(result)
+            for result in results
+        ],
+        "all_valid": all(
+            result.is_valid
+            for result in results
+        ),
     }
+
+
+# ============================================================
+# Link Checker
+# ============================================================
+
+MARKDOWN_LINK_PATTERN = re.compile(
+    r"\[[^\]]+\]\(([^)]+)\)"
+)
+
+
+def check_links_in_file(
+    file_path: Path,
+    repo: Path,
+) -> List[LinkCheckResult]:
+
+    results: List[
+        LinkCheckResult
+    ] = []
+
+    if not file_path.exists():
+        return results
+
+    try:
+        lines = file_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        ).splitlines()
+
+    except OSError:
+        return results
+
+    repo_root = repo.resolve()
+
+    for (
+        line_num,
+        line,
+    ) in enumerate(
+        lines,
+        start=1,
+    ):
+
+        for match in (
+            MARKDOWN_LINK_PATTERN
+            .finditer(line)
+        ):
+            target = (
+                match.group(1)
+                .strip()
+            )
+
+            if target.startswith(
+                (
+                    "http://",
+                    "https://",
+                    "mailto:",
+                    "tel:",
+                    "#",
+                )
+            ):
+                results.append(
+                    LinkCheckResult(
+                        file=rel(
+                            file_path,
+                            repo,
+                        ),
+                        line=line_num,
+                        target=target,
+                        status="external",
+                        description=(
+                            "External link "
+                            "(skipped)"
+                        ),
+                    )
+                )
+
+                continue
+
+            clean_target = (
+                target.split(
+                    "#",
+                    1,
+                )[0]
+            )
+
+            if not clean_target:
+                continue
+
+            resolved = (
+                file_path.parent
+                / clean_target
+            ).resolve()
+
+            try:
+                resolved.relative_to(
+                    repo_root
+                )
+
+            except ValueError:
+                results.append(
+                    LinkCheckResult(
+                        file=rel(
+                            file_path,
+                            repo,
+                        ),
+                        line=line_num,
+                        target=target,
+                        status="broken",
+                        description=(
+                            "Link escapes "
+                            "repository"
+                        ),
+                    )
+                )
+
+                continue
+
+            if resolved.exists():
+                results.append(
+                    LinkCheckResult(
+                        file=rel(
+                            file_path,
+                            repo,
+                        ),
+                        line=line_num,
+                        target=target,
+                        status="ok",
+                        description=(
+                            "Link exists"
+                        ),
+                    )
+                )
+
+            else:
+                results.append(
+                    LinkCheckResult(
+                        file=rel(
+                            file_path,
+                            repo,
+                        ),
+                        line=line_num,
+                        target=target,
+                        status="broken",
+                        description=(
+                            "Link target "
+                            "not found"
+                        ),
+                    )
+                )
+
+    return results
+
+
+def check_all_links(
+    repo: Path,
+) -> List[LinkCheckResult]:
+
+    results: List[
+        LinkCheckResult
+    ] = []
+
+    docs_dir = repo / "docs"
+
+    if not docs_dir.exists():
+        return results
+
+    for md_file in (
+        docs_dir.rglob("*.md")
+    ):
+        results.extend(
+            check_links_in_file(
+                md_file,
+                repo,
+            )
+        )
+
+    return results
+
+
+def print_link_results(
+    results: List[
+        LinkCheckResult
+    ],
+) -> None:
+
+    print("=" * 72)
+    print(
+        "Nazm Dad — Link Check"
+    )
+    print("=" * 72)
+
+    broken = [
+        result
+        for result in results
+        if result.status == "broken"
+    ]
+
+    ok = [
+        result
+        for result in results
+        if result.status == "ok"
+    ]
+
+    external = [
+        result
+        for result in results
+        if result.status == "external"
+    ]
+
+    print(
+        f"\n✅ OK: {len(ok)}"
+    )
+
+    print(
+        f"🌐 External: {len(external)}"
+    )
+
+    print(
+        f"❌ Broken: {len(broken)}"
+    )
+
+    if broken:
+        print(
+            "\n❌ لینک‌های شکسته:"
+        )
+
+        for result in broken:
+            print(
+                f"  {result.file}:"
+                f"{result.line} -> "
+                f"{result.target}"
+            )
+
+    print(
+        "\n" + "=" * 72
+    )
+
+
+def link_payload(
+    results: List[
+        LinkCheckResult
+    ],
+) -> Dict[str, Any]:
+
+    return {
+        "schema": 1,
+        "tool": (
+            "nazm-dad-project-status"
+        ),
+        "version": TOOL_VERSION,
+        "timestamp": utc_timestamp(),
+        "stats": {
+            "total": len(results),
+            "ok": len(
+                [
+                    result
+                    for result
+                    in results
+                    if (
+                        result.status
+                        == "ok"
+                    )
+                ]
+            ),
+            "external": len(
+                [
+                    result
+                    for result
+                    in results
+                    if (
+                        result.status
+                        == "external"
+                    )
+                ]
+            ),
+            "broken": len(
+                [
+                    result
+                    for result
+                    in results
+                    if (
+                        result.status
+                        == "broken"
+                    )
+                ]
+            ),
+        },
+        "broken": [
+            asdict(result)
+            for result in results
+            if result.status == "broken"
+        ],
+    }
+
+
+# ============================================================
+# Summary
+# ============================================================
+
+def build_summary(
+    repo: Path,
+    core: str,
+) -> ProjectSummary:
+
+    branch = git_branch(repo)
+
+    clean_state = git_is_clean(
+        repo
+    )
+
+    is_clean = (
+        clean_state
+        if clean_state is not None
+        else False
+    )
+
+    commit = git_commit_short(
+        repo
+    )
+
+    commit_date = git_commit_date(
+        repo
+    )
+
+    health_score: Optional[
+        int
+    ] = None
+
+    try:
+        health_proc = capture_core(
+            repo,
+            core,
+            [
+                "--health",
+                "--no-progress",
+            ],
+            timeout_seconds=(
+                STRICT_TIMEOUT_SECONDS
+            ),
+        )
+
+        if health_proc.returncode in (
+            EXIT_OK,
+            EXIT_VALIDATION_FAILED,
+        ):
+            health_score = (
+                extract_health_score(
+                    health_proc.stdout
+                )
+            )
+
+    except (
+        FileNotFoundError,
+        ValueError,
+        OSError,
+        subprocess.TimeoutExpired,
+    ):
+        pass
+
+    doc_dir = repo / "docs"
+
+    total_documents = 0
+    valid_documents = 0
+    placeholder_documents = 0
+    invalid_documents = 0
+    total_articles = 0
+
+    if doc_dir.exists():
+        for relative in (
+            DEFAULT_REPAIR_FILES
+        ):
+            target = (
+                repo / relative
+            )
+
+            total_documents += 1
+
+            if (
+                not target.exists()
+                or not target.is_file()
+            ):
+                invalid_documents += 1
+                continue
+
+            try:
+                content = (
+                    target.read_text(
+                        encoding="utf-8",
+                        errors="strict",
+                    )
+                )
+
+                if (
+                    "placeholder"
+                    in content.lower()
+                    or "در انتظار"
+                    in content
+                ):
+                    placeholder_documents += 1
+
+                else:
+                    valid_documents += 1
+
+                    total_articles += (
+                        content.count(
+                            "ماده"
+                        )
+                    )
+
+            except (
+                OSError,
+                UnicodeDecodeError,
+            ):
+                invalid_documents += 1
+
+    ahead, behind = (
+        git_ahead_behind(repo)
+    )
+
+    return ProjectSummary(
+        branch=(
+            branch
+            or "detached"
+        ),
+        is_clean=is_clean,
+        commit=(
+            commit
+            or "unknown"
+        ),
+        commit_date=(
+            commit_date
+            or ""
+        ),
+        total_documents=(
+            total_documents
+        ),
+        valid_documents=(
+            valid_documents
+        ),
+        placeholder_documents=(
+            placeholder_documents
+        ),
+        invalid_documents=(
+            invalid_documents
+        ),
+        total_articles=(
+            total_articles
+        ),
+        health_score=health_score,
+        health_grade=(
+            extract_health_grade(
+                health_score
+            )
+        ),
+        changes_ahead=ahead,
+        changes_behind=behind,
+    )
+
+
+def summary_payload(
+    summary: ProjectSummary,
+) -> Dict[str, Any]:
+
+    return {
+        "schema": 1,
+        "tool": (
+            "nazm-dad-project-status"
+        ),
+        "version": TOOL_VERSION,
+        "timestamp": utc_timestamp(),
+        "git": {
+            "branch": summary.branch,
+            "clean": summary.is_clean,
+            "commit": summary.commit,
+            "commit_date": (
+                summary.commit_date
+            ),
+            "ahead": (
+                summary.changes_ahead
+            ),
+            "behind": (
+                summary.changes_behind
+            ),
+        },
+        "documents": {
+            "total": (
+                summary.total_documents
+            ),
+            "valid": (
+                summary.valid_documents
+            ),
+            "placeholder": (
+                summary
+                .placeholder_documents
+            ),
+            "invalid": (
+                summary.invalid_documents
+            ),
+            "total_articles": (
+                summary.total_articles
+            ),
+        },
+        "health": {
+            "score": (
+                summary.health_score
+            ),
+            "grade": (
+                summary.health_grade
+            ),
+        },
+    }
+
+
+def print_summary(
+    summary: ProjectSummary,
+) -> None:
+
+    print("=" * 72)
+    print(
+        f"Nazm Dad — Summary v{TOOL_VERSION}"
+    )
+    print("=" * 72)
+
+    print("\n📦 Git:")
+
+    print(
+        f"  Branch: {summary.branch}"
+    )
+
+    print(
+        "  Working tree: "
+        + (
+            "✅ clean"
+            if summary.is_clean
+            else "❌ dirty"
+        )
+    )
+
+    print(
+        f"  Commit: "
+        f"{summary.commit} "
+        f"({summary.commit_date})"
+    )
+
+    if (
+        summary.changes_ahead
+        or summary.changes_behind
+    ):
+        print(
+            "  Ahead/Behind: "
+            f"{summary.changes_ahead}/"
+            f"{summary.changes_behind}"
+        )
+
+    print("\n📄 Documents:")
+
+    print(
+        "  Total: "
+        f"{summary.total_documents}"
+    )
+
+    if summary.total_documents:
+        progress = (
+            summary.valid_documents
+            / summary.total_documents
+            * 100
+        )
+
+        bar_length = 20
+
+        filled = int(
+            bar_length
+            * progress
+            / 100
+        )
+
+        bar = (
+            "█" * filled
+            + "░"
+            * (
+                bar_length
+                - filled
+            )
+        )
+
+        print(
+            f"  Progress: "
+            f"[{bar}] "
+            f"{progress:.1f}%"
+        )
+
+    else:
+        print(
+            "  Progress: N/A"
+        )
+
+    print(
+        "  ✅ Valid: "
+        f"{summary.valid_documents}"
+    )
+
+    print(
+        "  ⏳ Placeholder: "
+        f"{summary.placeholder_documents}"
+    )
+
+    print(
+        "  ❌ Invalid: "
+        f"{summary.invalid_documents}"
+    )
+
+    print(
+        "  📊 Total articles "
+        "(rough): "
+        f"{summary.total_articles}"
+    )
+
+    print("\n🏥 Health:")
+
+    if (
+        summary.health_score
+        is not None
+    ):
+        print(
+            "  Score: "
+            f"{summary.health_score}/100"
+        )
+
+        print(
+            "  Grade: "
+            f"{summary.health_grade}"
+        )
+
+    else:
+        print(
+            "  Score: N/A"
+        )
+
+    print(
+        "\n" + "=" * 72
+    )
+
+
+# ============================================================
+# History
+# ============================================================
+
+def show_history(
+    repo: Path,
+    max_count: int = 10,
+) -> int:
+
+    print("=" * 72)
+    print(
+        f"Nazm Dad — History v{TOOL_VERSION}"
+    )
+    print("=" * 72)
+
+    doc_files = [
+        "docs/0.4.md",
+        "docs/0.5.md",
+        "docs/changelog.md",
+    ]
+
+    for doc_file in doc_files:
+        target = (
+            repo / doc_file
+        )
+
+        if not target.exists():
+            print(
+                f"\n❌ {doc_file}: "
+                "not found"
+            )
+            continue
+
+        print(
+            f"\n📄 {doc_file}:"
+        )
+
+        entries = git_file_history(
+            repo,
+            doc_file,
+            max_count,
+        )
+
+        if not entries:
+            print(
+                "  No history found"
+            )
+            continue
+
+        for entry in entries:
+            print(
+                f"  {entry['commit']} "
+                f"| {entry['date'][:10]} "
+                f"| {entry['message']}"
+            )
+
+    print(
+        "\n" + "=" * 72
+    )
+
+    return EXIT_OK
 
 
 # ============================================================
@@ -1322,12 +2692,6 @@ def git_file_at_ref(
     ref: str,
     relative: str,
 ) -> Optional[bytes]:
-    """
-    خواندن فایل از Git ref.
-
-    relative قبلاً در repair_preview با safe_repo_path
-    بررسی می‌شود.
-    """
 
     relative = normalize_rel_path(
         relative
@@ -1362,21 +2726,18 @@ def source_file_bytes(
     source_dir: Path,
     relative: str,
 ) -> Optional[bytes]:
-    """
-    فایل منبع فقط وقتی خوانده می‌شود
-    که داخل source_dir باشد.
-    """
 
     normalized = normalize_rel_path(
         relative
     )
 
     try:
-        root = source_dir.resolve()
+        root = (
+            source_dir.resolve()
+        )
 
         target = (
-            root
-            / normalized
+            root / normalized
         ).resolve()
 
         target.relative_to(root)
@@ -1417,7 +2778,7 @@ def text_diff(
             errors="replace",
         )
         .splitlines(
-            keepends=True,
+            keepends=True
         )
     )
 
@@ -1428,7 +2789,7 @@ def text_diff(
             errors="replace",
         )
         .splitlines(
-            keepends=True,
+            keepends=True
         )
     )
 
@@ -1453,11 +2814,17 @@ def repair_preview(
     List[RepairPreviewItem],
 ]:
 
-    if bool(from_ref) == bool(source_dir):
+    if (
+        bool(from_ref)
+        == bool(source_dir)
+    ):
         raise ValueError(
-            "repair preview requires exactly "
-            "one source: --repair-from-ref "
-            "or --repair-source-dir"
+            (
+                "repair preview requires "
+                "exactly one source: "
+                "--repair-from-ref or "
+                "--repair-source-dir"
+            )
         )
 
     items: List[
@@ -1467,13 +2834,11 @@ def repair_preview(
     all_sources_found = True
 
     for raw_relative in files:
-        relative = normalize_rel_path(
-            raw_relative
+        relative = (
+            normalize_rel_path(
+                raw_relative
+            )
         )
-
-        # ----------------------------------------------------
-        # Destination safety
-        # ----------------------------------------------------
 
         try:
             target = safe_repo_path(
@@ -1492,44 +2857,45 @@ def repair_preview(
                     source_exists=False,
                     changed=False,
                     description=(
-                        f"invalid path: {exc}"
+                        "invalid path: "
+                        f"{exc}"
                     ),
                 )
             )
 
             continue
 
-        # ----------------------------------------------------
-        # Source
-        # ----------------------------------------------------
-
         if from_ref:
             source_name = (
-                f"git:{from_ref}:{relative}"
+                f"git:{from_ref}:"
+                f"{relative}"
             )
 
-            replacement = git_file_at_ref(
-                repo,
-                from_ref,
-                relative,
+            replacement = (
+                git_file_at_ref(
+                    repo,
+                    from_ref,
+                    relative,
+                )
             )
 
         else:
-            assert source_dir is not None
+            assert (
+                source_dir
+                is not None
+            )
 
             source_name = str(
                 source_dir
                 / Path(relative)
             )
 
-            replacement = source_file_bytes(
-                source_dir,
-                relative,
+            replacement = (
+                source_file_bytes(
+                    source_dir,
+                    relative,
+                )
             )
-
-        # ----------------------------------------------------
-        # Source missing
-        # ----------------------------------------------------
 
         if replacement is None:
             all_sources_found = False
@@ -1544,16 +2910,13 @@ def repair_preview(
                     source_exists=False,
                     changed=False,
                     description=(
-                        "source file not found"
+                        "source file "
+                        "not found"
                     ),
                 )
             )
 
             continue
-
-        # ----------------------------------------------------
-        # Current file
-        # ----------------------------------------------------
 
         try:
             current = (
@@ -1577,7 +2940,9 @@ def repair_preview(
                 current,
                 replacement,
                 current_name=relative,
-                replacement_name=source_name,
+                replacement_name=(
+                    source_name
+                ),
             )
 
         items.append(
@@ -1611,13 +2976,14 @@ def print_repair_preview(
 ) -> None:
 
     print("=" * 72)
-    print("Nazm Dad — Repair Preview")
-    print("=" * 72)
-
     print(
-        "DRY-RUN: no file will be modified."
+        "Nazm Dad — Repair Preview"
     )
-
+    print("=" * 72)
+    print(
+        "DRY-RUN: no file will "
+        "be modified."
+    )
     print()
 
     for item in items:
@@ -1631,14 +2997,12 @@ def print_repair_preview(
             icon = "✅"
 
         print(
-            f"{icon} "
-            f"{item.path}: "
+            f"{icon} {item.path}: "
             f"{item.description}"
         )
 
         print(
-            f"   source: "
-            f"{item.source}"
+            f"   source: {item.source}"
         )
 
         if item.diff:
@@ -1667,7 +3031,9 @@ def resolve_hash_files(
 
     if requested:
         candidates = [
-            normalize_rel_path(item)
+            normalize_rel_path(
+                item
+            )
             for item in requested
         ]
 
@@ -1678,7 +3044,7 @@ def resolve_hash_files(
         ]
 
     unique: List[str] = []
-    seen = set()
+    seen: Set[str] = set()
 
     for relative in candidates:
         if relative in seen:
@@ -1718,8 +3084,10 @@ def build_manifest(
     ] = []
 
     for relative in files:
-        normalized = normalize_rel_path(
-            relative
+        normalized = (
+            normalize_rel_path(
+                relative
+            )
         )
 
         try:
@@ -1731,7 +3099,8 @@ def build_manifest(
         except ValueError as exc:
             raise ValueError(
                 "manifest file escapes "
-                f"repository: {relative}"
+                "repository: "
+                f"{relative}"
             ) from exc
 
         if (
@@ -1739,18 +3108,22 @@ def build_manifest(
             or not target.is_file()
         ):
             raise FileNotFoundError(
-                "file not found for manifest: "
-                f"{relative}"
+                (
+                    "file not found for "
+                    "manifest: "
+                    f"{relative}"
+                )
             )
 
         records.append(
             {
                 "path": normalized,
-                "sha256": sha256_file(
-                    target
+                "sha256": (
+                    sha256_file(target)
                 ),
                 "size": (
-                    target.stat().st_size
+                    target.stat()
+                    .st_size
                 ),
             }
         )
@@ -1785,6 +3158,7 @@ def write_manifest(
         FileNotFoundError,
         OSError,
     ) as exc:
+
         print(
             f"❌ {exc}",
             file=sys.stderr,
@@ -1810,8 +3184,8 @@ def write_manifest(
 
     except OSError as exc:
         print(
-            f"❌ failed to write manifest: "
-            f"{exc}",
+            "❌ failed to write "
+            f"manifest: {exc}",
             file=sys.stderr,
         )
 
@@ -1855,6 +3229,7 @@ def verify_manifest(
         OSError,
         json.JSONDecodeError,
     ) as exc:
+
         print(
             f"❌ invalid manifest: {exc}",
             file=sys.stderr,
@@ -1872,8 +3247,10 @@ def verify_manifest(
         list,
     ):
         print(
-            "❌ invalid manifest: "
-            "'files' must be a list",
+            (
+                "❌ invalid manifest: "
+                "'files' must be a list"
+            ),
             file=sys.stderr,
         )
 
@@ -1913,8 +3290,10 @@ def verify_manifest(
             )
         ):
             print(
-                "❌ invalid manifest "
-                "record fields",
+                (
+                    "❌ invalid manifest "
+                    "record fields"
+                ),
                 file=sys.stderr,
             )
 
@@ -1954,7 +3333,8 @@ def verify_manifest(
         except OSError as exc:
             print(
                 f"❌ {relative}: "
-                f"unable to hash: {exc}"
+                "unable to hash: "
+                f"{exc}"
             )
 
             ok = False
@@ -1967,11 +3347,13 @@ def verify_manifest(
             )
 
             print(
-                f"   expected: {expected}"
+                f"   expected: "
+                f"{expected}"
             )
 
             print(
-                f"   actual:   {actual}"
+                f"   actual:   "
+                f"{actual}"
             )
 
             ok = False
@@ -1982,6 +3364,255 @@ def verify_manifest(
             )
 
     return ok
+
+
+# ============================================================
+# Strict
+# ============================================================
+
+def run_strict(
+    repo: Path,
+    core: str,
+    *,
+    timeout_seconds: float = (
+        STRICT_TIMEOUT_SECONDS
+    ),
+    quiet: bool = False,
+    include_health: bool = True,
+) -> Tuple[
+    bool,
+    Dict[str, StrictResult],
+]:
+
+    commands: Dict[
+        str,
+        List[str],
+    ] = {
+        "validate_docs": [
+            "--validate-docs",
+            "--no-progress",
+        ],
+        "check_links": [
+            "--check-links",
+            "--no-progress",
+        ],
+    }
+
+    if include_health:
+        commands["health"] = [
+            "--health",
+            "--no-progress",
+        ]
+
+    results: Dict[
+        str,
+        StrictResult,
+    ] = {}
+
+    for (
+        name,
+        arguments,
+    ) in commands.items():
+
+        if not quiet:
+            print("=" * 72)
+            print(
+                f"STRICT: {name}"
+            )
+            print("=" * 72)
+
+        started = (
+            time.monotonic()
+        )
+
+        code = run_core(
+            repo,
+            core,
+            arguments,
+            timeout_seconds=(
+                timeout_seconds
+            ),
+            quiet=quiet,
+        )
+
+        elapsed = (
+            time.monotonic()
+            - started
+        )
+
+        results[name] = (
+            StrictResult(
+                exit_code=code,
+                duration_seconds=(
+                    elapsed
+                ),
+            )
+        )
+
+        if not quiet:
+            if code == EXIT_OK:
+                print(
+                    f"✅ {name}: "
+                    "exit=0 "
+                    f"({elapsed:.2f}s)"
+                )
+
+            elif (
+                code
+                == TIMEOUT_EXIT_CODE
+            ):
+                print(
+                    f"⏱️ {name}: "
+                    "TIMEOUT "
+                    f"({elapsed:.2f}s)"
+                )
+
+            else:
+                print(
+                    f"❌ {name}: "
+                    f"exit={code} "
+                    f"({elapsed:.2f}s)"
+                )
+
+    if not quiet:
+        print("=" * 72)
+        print(
+            "STRICT: doctor"
+        )
+        print("=" * 72)
+
+    started = (
+        time.monotonic()
+    )
+
+    try:
+        report = doctor(
+            repo,
+            core,
+        )
+
+        doctor_code = (
+            EXIT_OK
+            if report.ok
+            else EXIT_VALIDATION_FAILED
+        )
+
+    except KeyboardInterrupt:
+        doctor_code = (
+            EXIT_INTERRUPTED
+        )
+
+    except Exception as exc:
+        doctor_code = (
+            EXIT_RUNTIME_ERROR
+        )
+
+        if not quiet:
+            print(
+                (
+                    "❌ doctor failed: "
+                    f"{exc}"
+                ),
+                file=sys.stderr,
+            )
+
+    elapsed = (
+        time.monotonic()
+        - started
+    )
+
+    results["doctor"] = (
+        StrictResult(
+            exit_code=doctor_code,
+            duration_seconds=elapsed,
+        )
+    )
+
+    if not quiet:
+        print()
+        print("=" * 72)
+        print(
+            "STRICT SUMMARY"
+        )
+        print("=" * 72)
+
+        ordered_names = [
+            *commands.keys(),
+            "doctor",
+        ]
+
+        for name in ordered_names:
+            result = results[name]
+
+            if (
+                result.exit_code
+                == EXIT_OK
+            ):
+                print(
+                    f"✅ {name}: "
+                    "exit=0 "
+                    f"({result.duration_seconds:.2f}s)"
+                )
+
+            elif (
+                result.exit_code
+                == TIMEOUT_EXIT_CODE
+            ):
+                print(
+                    f"⏱️ {name}: "
+                    "TIMEOUT "
+                    f"({result.duration_seconds:.2f}s)"
+                )
+
+            else:
+                print(
+                    f"❌ {name}: "
+                    f"exit={result.exit_code} "
+                    f"({result.duration_seconds:.2f}s)"
+                )
+
+    success = all(
+        (
+            item.exit_code
+            == EXIT_OK
+        )
+        for item in (
+            results.values()
+        )
+    )
+
+    return (
+        success,
+        results,
+    )
+
+
+def strict_results_payload(
+    results: Dict[
+        str,
+        StrictResult,
+    ],
+) -> Dict[str, Any]:
+
+    return {
+        name: {
+            "exit_code": (
+                result.exit_code
+            ),
+            "duration_seconds": round(
+                result.duration_seconds,
+                6,
+            ),
+            "timed_out": (
+                result.exit_code
+                == TIMEOUT_EXIT_CODE
+            ),
+        }
+        for (
+            name,
+            result,
+        ) in results.items()
+    }
 
 
 # ============================================================
@@ -2019,7 +3650,9 @@ def ci_report(
             timeout_seconds
         ),
         "threshold": threshold,
-        "threshold_enforced": strict,
+        "threshold_enforced": (
+            strict
+        ),
         "doctor": {
             "ok": report.ok,
             "checks": [
@@ -2030,13 +3663,11 @@ def ci_report(
         },
     }
 
-    # --------------------------------------------------------
-    # Strict checks
-    # health separately handled below
-    # --------------------------------------------------------
-
     if strict:
-        success, results = run_strict(
+        (
+            success,
+            results,
+        ) = run_strict(
             repo,
             core,
             timeout_seconds=(
@@ -2055,12 +3686,10 @@ def ci_report(
             ),
         }
 
-    # --------------------------------------------------------
-    # Health
-    # --------------------------------------------------------
-
     health_ok = False
-    health_score: Optional[int] = None
+    health_score: Optional[
+        int
+    ] = None
 
     try:
         health_proc = capture_core(
@@ -2087,14 +3716,12 @@ def ci_report(
             ),
         }
 
-        # Core health معمولاً می‌تواند:
-        # 0 = PASS
-        # 1 = validation/health below perfect
-        #
-        # 2+ = runtime failure
-        if health_proc.returncode in (
-            EXIT_OK,
-            EXIT_VALIDATION_FAILED,
+        if (
+            health_proc.returncode
+            in (
+                EXIT_OK,
+                EXIT_VALIDATION_FAILED,
+            )
         ):
             health_score = (
                 extract_health_score(
@@ -2102,7 +3729,10 @@ def ci_report(
                 )
             )
 
-            if health_score is not None:
+            if (
+                health_score
+                is not None
+            ):
                 payload[
                     "health_score"
                 ] = health_score
@@ -2112,12 +3742,6 @@ def ci_report(
                     >= threshold
                 )
 
-            else:
-                health_ok = False
-
-        else:
-            health_ok = False
-
     except subprocess.TimeoutExpired:
         payload["health"] = {
             "exit_code": (
@@ -2126,22 +3750,15 @@ def ci_report(
             "timed_out": True,
         }
 
-        health_ok = False
-
     except (
         FileNotFoundError,
         ValueError,
         OSError,
     ) as exc:
+
         payload["health"] = {
-            "error": str(exc)
+            "error": str(exc),
         }
-
-        health_ok = False
-
-    # --------------------------------------------------------
-    # Overall
-    # --------------------------------------------------------
 
     doctor_ok = bool(
         payload["doctor"]["ok"]
@@ -2158,10 +3775,10 @@ def ci_report(
         health_ok
     )
 
-    # v2.8 compatibility:
-    # basic CI does not enforce threshold.
     if not strict:
-        payload["ok"] = doctor_ok
+        payload["ok"] = (
+            doctor_ok
+        )
 
     else:
         payload["ok"] = (
@@ -2218,15 +3835,16 @@ def write_json_output(
 
     except OSError as exc:
         print(
-            "❌ failed to write JSON: "
-            f"{exc}",
+            "❌ failed to write "
+            f"JSON: {exc}",
             file=sys.stderr,
         )
 
         return False
 
     print(
-        f"✅ CI JSON written: {target}"
+        f"✅ CI JSON written: "
+        f"{target}"
     )
 
     return True
@@ -2260,8 +3878,10 @@ def generate_report(
             ),
         )
 
-        score = extract_health_score(
-            health_proc.stdout
+        score = (
+            extract_health_score(
+                health_proc.stdout
+            )
         )
 
         health_data: Dict[
@@ -2294,10 +3914,42 @@ def generate_report(
         ValueError,
         OSError,
     ) as exc:
+
         health_data = {
             "error": str(exc),
             "score": None,
         }
+
+    article_results = (
+        validate_articles(repo)
+    )
+
+    article_stats = {
+        "total_files": len(
+            article_results
+        ),
+        "valid_files": sum(
+            1
+            for result
+            in article_results
+            if result.is_valid
+        ),
+        "total_articles": sum(
+            result.total_found
+            for result
+            in article_results
+        ),
+        "valid": all(
+            result.is_valid
+            for result
+            in article_results
+        ),
+        "results": [
+            asdict(result)
+            for result
+            in article_results
+        ],
+    }
 
     return {
         "timestamp": utc_timestamp(),
@@ -2314,107 +3966,8 @@ def generate_report(
             ),
         },
         "health": health_data,
+        "articles": article_stats,
     }
-
-
-# ============================================================
-# Format Output
-# ============================================================
-
-def format_output(
-    data: Dict[str, Any],
-    fmt: str,
-) -> str:
-
-    if fmt == "json":
-        return json.dumps(
-            data,
-            ensure_ascii=False,
-            indent=2,
-        )
-
-    if fmt == "yaml":
-        try:
-            import yaml
-
-        except ImportError as exc:
-            raise RuntimeError(
-                "PyYAML is not installed. "
-                "Please install: "
-                "pip install pyyaml"
-            ) from exc
-
-        return yaml.dump(
-            data,
-            allow_unicode=True,
-            default_flow_style=False,
-            sort_keys=False,
-        )
-
-    if fmt == "csv":
-        import io
-
-        output = io.StringIO()
-
-        writer = csv.writer(
-            output
-        )
-
-        writer.writerow(
-            [
-                "key",
-                "value",
-            ]
-        )
-
-        def flatten(
-            value: Any,
-            parent: str = "",
-        ) -> None:
-
-            if isinstance(
-                value,
-                dict,
-            ):
-                for key, child in value.items():
-                    next_parent = (
-                        f"{parent}{key}."
-                    )
-
-                    flatten(
-                        child,
-                        next_parent,
-                    )
-
-            elif isinstance(
-                value,
-                list,
-            ):
-                writer.writerow(
-                    [
-                        parent.rstrip("."),
-                        json.dumps(
-                            value,
-                            ensure_ascii=False,
-                        ),
-                    ]
-                )
-
-            else:
-                writer.writerow(
-                    [
-                        parent.rstrip("."),
-                        str(value),
-                    ]
-                )
-
-        flatten(data)
-
-        return output.getvalue()
-
-    raise ValueError(
-        f"Unsupported format: {fmt}"
-    )
 
 
 # ============================================================
@@ -2428,12 +3981,10 @@ def compare_status(
 ) -> int:
 
     print("=" * 72)
-
     print(
-        "Nazm Dad — Compare with ref: "
-        f"{ref}"
+        "Nazm Dad — Compare "
+        f"with ref: {ref}"
     )
-
     print("=" * 72)
 
     if not git_ref_exists(
@@ -2441,14 +3992,18 @@ def compare_status(
         ref,
     ):
         print(
-            f"❌ Git ref not found: {ref}",
+            "❌ Git ref not found: "
+            f"{ref}",
             file=sys.stderr,
         )
 
-        return EXIT_VALIDATION_FAILED
+        return (
+            EXIT_VALIDATION_FAILED
+        )
 
-    print()
-    print("📋 Current status:")
+    print(
+        "\n📋 Current status:"
+    )
 
     current_report = doctor(
         repo,
@@ -2459,31 +4014,33 @@ def compare_status(
         current_report
     )
 
-    print()
-    print("-" * 72)
+    print(
+        "\n" + "-" * 72
+    )
 
     print(
-        "📋 Files changed relative "
-        f"to {ref}:"
+        "📋 Files changed "
+        f"relative to {ref}:"
     )
 
     print("-" * 72)
 
     try:
-        sources_ok, items = (
-            repair_preview(
-                repo,
-                DEFAULT_REPAIR_FILES,
-                from_ref=ref,
-            )
+        (
+            sources_ok,
+            items,
+        ) = repair_preview(
+            repo,
+            DEFAULT_REPAIR_FILES,
+            from_ref=ref,
         )
 
         for item in items:
             if not item.source_exists:
                 print(
                     f"❌ {item.path}: "
-                    "source file not found "
-                    f"at {ref}"
+                    "source file not "
+                    f"found at {ref}"
                 )
 
             elif item.changed:
@@ -2493,22 +4050,28 @@ def compare_status(
                 )
 
                 diff_lines = (
-                    item.diff.splitlines()
+                    item.diff
+                    .splitlines()
                 )
 
-                for line in diff_lines[:10]:
+                for line in (
+                    diff_lines[:10]
+                ):
                     print(
                         f"   {line}"
                     )
 
-                if len(diff_lines) > 10:
+                if (
+                    len(diff_lines)
+                    > 10
+                ):
                     remaining = (
                         len(diff_lines)
                         - 10
                     )
 
                     print(
-                        f"   ... "
+                        "   ... "
                         f"({remaining} "
                         "more lines)"
                     )
@@ -2523,8 +4086,9 @@ def compare_status(
             print()
 
             print(
-                f"❌ ref '{ref}' could not "
-                "provide all required files."
+                f"❌ ref '{ref}' "
+                "could not provide "
+                "all required files."
             )
 
             return (
@@ -2539,8 +4103,9 @@ def compare_status(
 
         return EXIT_USAGE_ERROR
 
-    print()
-    print("=" * 72)
+    print(
+        "\n" + "=" * 72
+    )
 
     return EXIT_OK
 
@@ -2550,7 +4115,6 @@ def compare_status(
 # ============================================================
 
 class WatchMode:
-
     IGNORED_DIRS = {
         ".git",
         "__pycache__",
@@ -2576,6 +4140,10 @@ class WatchMode:
         timeout_seconds: float = (
             STRICT_TIMEOUT_SECONDS
         ),
+        custom_commands: Optional[
+            List[str]
+        ] = None,
+        quiet: bool = False,
     ):
         self.repo = repo
         self.core = core
@@ -2595,6 +4163,12 @@ class WatchMode:
             timeout_seconds
         )
 
+        self.custom_commands = (
+            custom_commands or []
+        )
+
+        self.quiet = quiet
+
         self._last_mtime: Dict[
             Path,
             float,
@@ -2608,8 +4182,10 @@ class WatchMode:
     ) -> bool:
 
         return any(
-            part in self.IGNORED_DIRS
-            for part in path.parts
+            part
+            in self.IGNORED_DIRS
+            for part
+            in path.parts
         )
 
     def scan_files(
@@ -2629,11 +4205,15 @@ class WatchMode:
                 for path in matches:
                     if (
                         path.is_file()
-                        and not self._is_ignored(
-                            path
+                        and not (
+                            self._is_ignored(
+                                path
+                            )
                         )
                     ):
-                        files.append(path)
+                        files.append(
+                            path
+                        )
 
             except OSError:
                 continue
@@ -2646,9 +4226,7 @@ class WatchMode:
         self,
     ) -> List[Path]:
 
-        changed: List[
-            Path
-        ] = []
+        changed: List[Path] = []
 
         current_files = (
             self.scan_files()
@@ -2658,12 +4236,12 @@ class WatchMode:
             current_files
         )
 
-        # Changed / new
-        for file_path in current_files:
+        for file_path in (
+            current_files
+        ):
             try:
                 mtime = (
-                    file_path
-                    .stat()
+                    file_path.stat()
                     .st_mtime
                 )
 
@@ -2692,7 +4270,6 @@ class WatchMode:
             except OSError:
                 continue
 
-        # Deleted files
         deleted = [
             path
             for path
@@ -2712,49 +4289,62 @@ class WatchMode:
 
         return changed
 
-    def run(
-        self,
-    ) -> None:
+    def run(self) -> None:
+        if not self.quiet:
+            print("=" * 72)
 
-        print("=" * 72)
+            print(
+                "Nazm Dad — Watch "
+                f"Mode v{TOOL_VERSION}"
+            )
 
-        print(
-            "Nazm Dad — Watch Mode "
-            f"v{TOOL_VERSION}"
-        )
+            print("=" * 72)
 
-        print("=" * 72)
+            print(
+                f"Repository: "
+                f"{self.repo}"
+            )
 
-        print(
-            f"Repository: {self.repo}"
-        )
+            print(
+                "Patterns: "
+                + ", ".join(
+                    self.patterns
+                )
+            )
 
-        print(
-            "Patterns: "
-            f"{', '.join(self.patterns)}"
-        )
+            print(
+                "Interval: "
+                f"{self.interval:g}s"
+            )
 
-        print(
-            f"Interval: {self.interval:g}s"
-        )
+            print(
+                "Timeout: "
+                f"{self.timeout_seconds:g}s"
+            )
 
-        print(
-            "Timeout: "
-            f"{self.timeout_seconds:g}s"
-        )
+            if self.custom_commands:
+                print(
+                    "Custom commands: "
+                    + ", ".join(
+                        self.custom_commands
+                    )
+                )
 
-        print(
-            "Ignored dirs: "
-            f"{', '.join(sorted(self.IGNORED_DIRS))}"
-        )
+            print(
+                "Ignored dirs: "
+                + ", ".join(
+                    sorted(
+                        self.IGNORED_DIRS
+                    )
+                )
+            )
 
-        print(
-            "Press Ctrl+C to stop"
-        )
+            print(
+                "Press Ctrl+C to stop"
+            )
 
-        print("-" * 72)
+            print("-" * 72)
 
-        # Initial snapshot
         for file_path in (
             self.scan_files()
         ):
@@ -2762,11 +4352,9 @@ class WatchMode:
                 self._last_mtime[
                     file_path
                 ] = (
-                    file_path
-                    .stat()
+                    file_path.stat()
                     .st_mtime
                 )
-
             except OSError:
                 pass
 
@@ -2801,33 +4389,45 @@ class WatchMode:
                             str(path)
                         )
 
-                print()
+                if self.quiet:
+                    print(
+                        "🔄 Changed: "
+                        + ", ".join(
+                            changed_names
+                        )
+                    )
 
-                print(
-                    "🔄 Changed: "
-                    f"{', '.join(changed_names)}"
-                )
+                else:
+                    print()
 
-                print("-" * 72)
+                    print(
+                        "🔄 Changed: "
+                        + ", ".join(
+                            changed_names
+                        )
+                    )
 
-                print(
-                    "Running doctor..."
-                )
+                    print("-" * 72)
+                    print(
+                        "Running doctor..."
+                    )
 
                 report = doctor(
                     self.repo,
                     self.core,
                 )
 
-                print_doctor(
-                    report
-                )
+                if not self.quiet:
+                    print_doctor(
+                        report
+                    )
 
-                print()
+                    print()
 
-                print(
-                    "Running health check..."
-                )
+                    print(
+                        "Running health "
+                        "check..."
+                    )
 
                 run_core(
                     self.repo,
@@ -2837,17 +4437,74 @@ class WatchMode:
                         "--no-progress",
                     ],
                     timeout_seconds=(
-                        self.timeout_seconds
+                        self
+                        .timeout_seconds
                     ),
-                    quiet=False,
+                    quiet=self.quiet,
                 )
 
-                print("-" * 72)
+                for cmd in (
+                    self.custom_commands
+                ):
+                    if not self.quiet:
+                        print()
+
+                        print(
+                            f"Running: {cmd}"
+                        )
+
+                    try:
+                        subprocess.run(
+                            cmd,
+                            shell=True,
+                            cwd=str(
+                                self.repo
+                            ),
+                            timeout=(
+                                self
+                                .timeout_seconds
+                            ),
+                            stdout=(
+                                subprocess
+                                .DEVNULL
+                                if self.quiet
+                                else None
+                            ),
+                            stderr=(
+                                subprocess
+                                .DEVNULL
+                                if self.quiet
+                                else None
+                            ),
+                        )
+
+                    except (
+                        subprocess
+                        .TimeoutExpired
+                    ):
+                        if not self.quiet:
+                            print(
+                                "⏱️ Command "
+                                "timed out: "
+                                f"{cmd}"
+                            )
+
+                    except OSError as exc:
+                        if not self.quiet:
+                            print(
+                                "❌ Failed to "
+                                f"run: {cmd} "
+                                f"({exc})"
+                            )
+
+                if not self.quiet:
+                    print("-" * 72)
 
         except KeyboardInterrupt:
-            print(
-                "\n👋 Watch stopped."
-            )
+            if not self.quiet:
+                print(
+                    "\n👋 Watch stopped."
+                )
 
 
 # ============================================================
@@ -2858,21 +4515,11 @@ def auto_fix(
     repo: Path,
     dry_run: bool = False,
 ) -> int:
-    """
-    Auto-fix فقط برای فایل‌های غیرحقوقی.
-
-    LICENSE و LICENSE-DOCS عمداً ساخته نمی‌شوند.
-    """
 
     created: List[str] = []
 
-    # --------------------------------------------------------
-    # .gitignore
-    # --------------------------------------------------------
-
     gitignore = (
-        repo
-        / ".gitignore"
+        repo / ".gitignore"
     )
 
     if not gitignore.exists():
@@ -2893,7 +4540,8 @@ def auto_fix(
 
         if dry_run:
             print(
-                "[dry-run] would create: "
+                "[dry-run] would "
+                "create: "
                 f"{rel(gitignore, repo)}"
             )
 
@@ -2906,8 +4554,11 @@ def auto_fix(
 
             except OSError as exc:
                 print(
-                    "❌ failed to create "
-                    f".gitignore: {exc}",
+                    (
+                        "❌ failed to "
+                        "create .gitignore: "
+                        f"{exc}"
+                    ),
                     file=sys.stderr,
                 )
 
@@ -2922,25 +4573,19 @@ def auto_fix(
                 )
             )
 
-    # --------------------------------------------------------
-    # README
-    # --------------------------------------------------------
-
-    readme = (
-        repo
-        / "README.md"
-    )
+    readme = repo / "README.md"
 
     if not readme.exists():
         content = (
             "# Nazm Dad\n\n"
-            "A constitutional framework "
-            "for Iran.\n"
+            "A constitutional "
+            "framework for Iran.\n"
         )
 
         if dry_run:
             print(
-                "[dry-run] would create: "
+                "[dry-run] would "
+                "create: "
                 f"{rel(readme, repo)}"
             )
 
@@ -2953,8 +4598,11 @@ def auto_fix(
 
             except OSError as exc:
                 print(
-                    "❌ failed to create "
-                    f"README.md: {exc}",
+                    (
+                        "❌ failed to "
+                        "create README.md: "
+                        f"{exc}"
+                    ),
                     file=sys.stderr,
                 )
 
@@ -2969,10 +4617,6 @@ def auto_fix(
                 )
             )
 
-    # --------------------------------------------------------
-    # Result
-    # --------------------------------------------------------
-
     if dry_run:
         if (
             gitignore.exists()
@@ -2980,7 +4624,8 @@ def auto_fix(
         ):
             print(
                 "[dry-run] no safe "
-                "auto-fix changes required."
+                "auto-fix changes "
+                "required."
             )
 
         return EXIT_OK
@@ -2988,7 +4633,7 @@ def auto_fix(
     if created:
         print(
             "✅ Auto-fix created: "
-            f"{', '.join(created)}"
+            + ", ".join(created)
         )
 
     else:
@@ -3001,11 +4646,449 @@ def auto_fix(
 
 
 # ============================================================
+# HTML Report
+# ============================================================
+
+def generate_html_report(
+    repo: Path,
+    payload: Dict[str, Any],
+    output_path: Path,
+) -> bool:
+
+    def e(
+        value: Any,
+    ) -> str:
+        return html.escape(
+            str(value)
+        )
+
+    status_ok = payload.get(
+        "ok",
+        False,
+    )
+
+    status_class = (
+        "pass"
+        if status_ok
+        else "fail-bg"
+    )
+
+    status_text = (
+        "✅ PASS"
+        if status_ok
+        else "❌ FAIL"
+    )
+
+    doc_stats = (
+        payload
+        .get(
+            "doctor",
+            {},
+        )
+        .get(
+            "checks",
+            [],
+        )
+    )
+
+    doc_checks = [
+        check
+        for check
+        in doc_stats
+        if str(
+            check.get(
+                "name",
+                "",
+            )
+        ).startswith(
+            "doc:"
+        )
+    ]
+
+    total_docs = len(
+        doc_checks
+    )
+
+    valid_docs = sum(
+        1
+        for check
+        in doc_checks
+        if check.get(
+            "ok",
+            False,
+        )
+    )
+
+    percentage = (
+        valid_docs
+        / total_docs
+        * 100
+        if total_docs
+        else 0
+    )
+
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nazm Dad CI Report</title>
+    <style>
+        body {{
+            font-family: sans-serif;
+            margin: 20px;
+            background: #f5f0e6;
+        }}
+
+        .container {{
+            max-width: 900px;
+            margin: auto;
+            background: #fff;
+            padding: 30px;
+            border-radius: 12px;
+        }}
+
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }}
+
+        th, td {{
+            padding: 8px 12px;
+            border-bottom: 1px solid #ddd;
+            text-align: left;
+        }}
+
+        .status {{
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-weight: bold;
+        }}
+
+        .pass {{
+            background: #d4edda;
+            color: #155724;
+        }}
+
+        .fail-bg {{
+            background: #f8d7da;
+            color: #721c24;
+        }}
+
+        .progress-bar {{
+            width: 100%;
+            height: 20px;
+            background: #eee;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 5px 0;
+        }}
+
+        .progress-fill {{
+            height: 100%;
+            background: #28a745;
+            border-radius: 10px;
+        }}
+
+        .chart-row {{
+            display: flex;
+            justify-content: space-between;
+            margin: 4px 0;
+        }}
+    </style>
+</head>
+<body>
+<div class="container">
+
+<h1>Nazm Dad — CI Report</h1>
+
+<p>
+<strong>Version:</strong>
+{e(TOOL_VERSION)}
+</p>
+
+<p>
+<strong>Timestamp:</strong>
+{e(payload.get("timestamp", ""))}
+</p>
+
+<p>
+<strong>Status:</strong>
+<span class="status {e(status_class)}">
+{e(status_text)}
+</span>
+</p>
+
+<hr>
+
+<h2>Git</h2>
+
+<p>
+<strong>Branch:</strong>
+{e(payload.get("branch", ""))}
+</p>
+
+<p>
+<strong>Commit:</strong>
+{e(str(payload.get("commit", ""))[:8])}
+</p>
+
+<hr>
+
+<h2>Doctor</h2>
+
+<p>
+<strong>OK:</strong>
+{"✅" if payload.get("doctor", {}).get("ok") else "❌"}
+</p>
+
+<h3>Checks</h3>
+
+<table>
+<tr>
+<th>Check</th>
+<th>Status</th>
+<th>Detail</th>
+</tr>
+"""
+
+    for check in (
+        payload
+        .get(
+            "doctor",
+            {},
+        )
+        .get(
+            "checks",
+            [],
+        )
+    ):
+        if check.get(
+            "warning"
+        ):
+            status = "⚠️"
+
+        elif check.get(
+            "ok"
+        ):
+            status = "✅"
+
+        else:
+            status = "❌"
+
+        html_content += (
+            "<tr>"
+            f"<td>{e(check.get('name', ''))}</td>"
+            f"<td>{e(status)}</td>"
+            f"<td>{e(check.get('detail', ''))}</td>"
+            "</tr>\n"
+        )
+
+    html_content += f"""
+</table>
+
+<h3>Document Status</h3>
+
+<div class="progress-bar">
+<div class="progress-fill"
+style="width: {e(f'{percentage:.1f}')}%;">
+</div>
+</div>
+
+<div class="chart-row">
+<span>
+Valid:
+{e(valid_docs)}
+/
+{e(total_docs)}
+</span>
+
+<span>
+{e(f'{percentage:.1f}')}%
+</span>
+</div>
+"""
+
+    if (
+        payload.get(
+            "health_score"
+        )
+        is not None
+    ):
+        score = int(
+            payload[
+                "health_score"
+            ]
+        )
+
+        grade = (
+            extract_health_grade(
+                score
+            )
+        )
+
+        if score >= 80:
+            color = "#28a745"
+
+        elif score >= 60:
+            color = "#ffc107"
+
+        else:
+            color = "#dc3545"
+
+        html_content += f"""
+<h2>Health</h2>
+
+<p>
+<strong>Score:</strong>
+{e(score)}/100
+</p>
+
+<p>
+<strong>Grade:</strong>
+{e(grade)}
+</p>
+
+<div class="progress-bar">
+<div class="progress-fill"
+style="width: {e(score)}%;
+background: {e(color)};">
+</div>
+</div>
+"""
+
+    if payload.get(
+        "strict"
+    ):
+        strict_ok = (
+            payload
+            .get(
+                "strict",
+                {},
+            )
+            .get(
+                "ok",
+                False,
+            )
+        )
+
+        html_content += f"""
+<h2>Strict Checks</h2>
+
+<p>
+<strong>OK:</strong>
+{"✅" if strict_ok else "❌"}
+</p>
+
+<table>
+<tr>
+<th>Check</th>
+<th>Exit Code</th>
+<th>Duration</th>
+<th>Timed Out</th>
+</tr>
+"""
+
+        strict_results = (
+            payload
+            .get(
+                "strict",
+                {},
+            )
+            .get(
+                "results",
+                {},
+            )
+        )
+
+        for (
+            name,
+            result,
+        ) in strict_results.items():
+
+            timed_out = bool(
+                result.get(
+                    "timed_out",
+                    False,
+                )
+            )
+
+            timed_out_display = (
+                "❌ Yes"
+                if timed_out
+                else "✅ No"
+            )
+
+            duration = float(
+                result.get(
+                    "duration_seconds",
+                    0,
+                )
+            )
+
+            html_content += (
+                "<tr>"
+                f"<td>{e(name)}</td>"
+                f"<td>{e(result.get('exit_code', ''))}</td>"
+                f"<td>{e(f'{duration:.2f}s')}</td>"
+                f"<td>{e(timed_out_display)}</td>"
+                "</tr>\n"
+            )
+
+        html_content += (
+            "</table>\n"
+        )
+
+    html_content += f"""
+<hr>
+
+<p>
+<em>
+Generated by Nazm Dad Project Status
+v{e(TOOL_VERSION)}
+</em>
+</p>
+
+</div>
+</body>
+</html>
+"""
+
+    try:
+        output_path.parent.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        output_path.write_text(
+            html_content,
+            encoding="utf-8",
+        )
+
+        print(
+            "✅ HTML report written: "
+            f"{output_path}"
+        )
+
+        return True
+
+    except OSError as exc:
+        print(
+            "❌ Failed to write HTML: "
+            f"{exc}",
+            file=sys.stderr,
+        )
+
+        return False
+
+
+# ============================================================
 # Parser
 # ============================================================
 
-def build_parser(
-) -> argparse.ArgumentParser:
+def build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog=(
@@ -3019,10 +5102,6 @@ def build_parser(
         add_help=True,
     )
 
-    # --------------------------------------------------------
-    # General
-    # --------------------------------------------------------
-
     parser.add_argument(
         "--repo",
         default=".",
@@ -3033,42 +5112,100 @@ def build_parser(
         "--core",
         default=DEFAULT_CORE,
         help=(
-            "core project-status script "
+            "core script "
             f"(default: {DEFAULT_CORE})"
         ),
     )
 
-    # --------------------------------------------------------
-    # Doctor
-    # --------------------------------------------------------
+    parser.add_argument(
+        "--config",
+        help=(
+            "path to config file "
+            "(.nazm-dad-config.json)"
+        ),
+    )
+
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help=(
+            "reduce output "
+            "(watch: only show changes)"
+        ),
+    )
+
+    parser.add_argument(
+        "--output",
+        help=(
+            "write structured output "
+            "or HTML report to file"
+        ),
+    )
 
     parser.add_argument(
         "--doctor",
         action="store_true",
-        help=(
-            "run environment/repository "
-            "diagnostics"
-        ),
+        help="run diagnostics",
     )
 
     parser.add_argument(
         "--doctor-json",
         action="store_true",
         help=(
-            "print doctor report as JSON"
+            "print doctor report "
+            "as JSON"
         ),
     )
 
-    # --------------------------------------------------------
-    # Repair preview
-    # --------------------------------------------------------
+    parser.add_argument(
+        "--summary",
+        action="store_true",
+        help=(
+            "quick project summary"
+        ),
+    )
+
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help=(
+            "show document history"
+        ),
+    )
+
+    parser.add_argument(
+        "--history-count",
+        type=int,
+        default=10,
+        help=(
+            "max history entries "
+            "(default: 10)"
+        ),
+    )
+
+    parser.add_argument(
+        "--validate-articles",
+        action="store_true",
+        help=(
+            "validate article "
+            "structure and numbering"
+        ),
+    )
+
+    parser.add_argument(
+        "--check-links",
+        action="store_true",
+        help=(
+            "check for broken links "
+            "in documents"
+        ),
+    )
 
     parser.add_argument(
         "--repair-preview",
         action="store_true",
         help=(
-            "preview document repair "
-            "without writing"
+            "preview document repair"
         ),
     )
 
@@ -3077,9 +5214,8 @@ def build_parser(
         metavar="REF",
         default=None,
         help=(
-            "Git ref used by "
-            "--repair-preview "
-            "(preview only)"
+            "Git ref for "
+            "repair preview"
         ),
     )
 
@@ -3087,9 +5223,8 @@ def build_parser(
         "--repair-source-dir",
         default=None,
         help=(
-            "source directory used by "
-            "--repair-preview "
-            "(preview only)"
+            "source directory for "
+            "repair preview"
         ),
     )
 
@@ -3098,38 +5233,33 @@ def build_parser(
         nargs="+",
         default=None,
         help=(
-            "project-relative files to "
-            "preview for repair"
+            "files to preview"
         ),
     )
-
-    # --------------------------------------------------------
-    # Strict
-    # --------------------------------------------------------
 
     parser.add_argument(
         "--strict",
         action="store_true",
         help=(
-            "strict CI-style validation"
+            "strict CI-style "
+            "validation"
         ),
     )
 
     parser.add_argument(
         "--strict-timeout",
         type=float,
-        default=STRICT_TIMEOUT_SECONDS,
+        default=(
+            STRICT_TIMEOUT_SECONDS
+        ),
         metavar="SECONDS",
         help=(
-            "timeout per strict subprocess "
+            "timeout per strict "
+            "subprocess "
             f"(default: "
             f"{STRICT_TIMEOUT_SECONDS:g})"
         ),
     )
-
-    # --------------------------------------------------------
-    # Hashes
-    # --------------------------------------------------------
 
     parser.add_argument(
         "--hash-manifest",
@@ -3152,7 +5282,8 @@ def build_parser(
         default=DEFAULT_MANIFEST,
         help=(
             "manifest path "
-            f"(default: {DEFAULT_MANIFEST})"
+            f"(default: "
+            f"{DEFAULT_MANIFEST})"
         ),
     )
 
@@ -3166,10 +5297,6 @@ def build_parser(
         ),
     )
 
-    # --------------------------------------------------------
-    # CI
-    # --------------------------------------------------------
-
     parser.add_argument(
         "--ci-json",
         nargs="?",
@@ -3177,8 +5304,7 @@ def build_parser(
         default=None,
         metavar="FILE",
         help=(
-            "write CI JSON to FILE, "
-            "or '-' / no value for stdout"
+            "write CI JSON to FILE"
         ),
     )
 
@@ -3191,27 +5317,36 @@ def build_parser(
         ),
     )
 
-    # --------------------------------------------------------
-    # Version
-    # --------------------------------------------------------
+    parser.add_argument(
+        "--ci-html",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
+
+    parser.add_argument(
+        "--html-report",
+        action="store_true",
+        help=(
+            "generate HTML report "
+            "with status charts"
+        ),
+    )
 
     parser.add_argument(
         "--version",
         action="store_true",
         help=(
-            f"show v{TOOL_VERSION} version"
+            f"show v{TOOL_VERSION} "
+            "version"
         ),
     )
-
-    # --------------------------------------------------------
-    # Report
-    # --------------------------------------------------------
 
     parser.add_argument(
         "--report",
         action="store_true",
         help=(
-            "generate comprehensive report"
+            "generate comprehensive "
+            "report"
         ),
     )
 
@@ -3222,16 +5357,12 @@ def build_parser(
             "yaml",
             "csv",
         ],
-        default="json",
+        default=None,
         help=(
-            "output format "
-            "(default: json)"
+            "structured output "
+            "format: json/yaml/csv"
         ),
     )
-
-    # --------------------------------------------------------
-    # Watch
-    # --------------------------------------------------------
 
     parser.add_argument(
         "--watch",
@@ -3261,15 +5392,19 @@ def build_parser(
             "*.txt",
         ],
         help=(
-            "file patterns to watch "
-            "(default: *.md *.py "
-            "*.json *.txt)"
+            "file patterns to watch"
         ),
     )
 
-    # --------------------------------------------------------
-    # Threshold
-    # --------------------------------------------------------
+    parser.add_argument(
+        "--watch-command",
+        nargs="+",
+        default=None,
+        help=(
+            "custom commands to run "
+            "on change"
+        ),
+    )
 
     parser.add_argument(
         "--threshold",
@@ -3281,28 +5416,21 @@ def build_parser(
         ),
     )
 
-    # --------------------------------------------------------
-    # Compare
-    # --------------------------------------------------------
-
     parser.add_argument(
         "--compare",
         metavar="REF",
         help=(
-            "compare with a given Git ref"
+            "compare with a given "
+            "Git ref"
         ),
     )
-
-    # --------------------------------------------------------
-    # Auto-fix
-    # --------------------------------------------------------
 
     parser.add_argument(
         "--dry-run",
         action="store_true",
         help=(
             "preview --auto-fix "
-            "without writing files"
+            "without writing"
         ),
     )
 
@@ -3310,9 +5438,9 @@ def build_parser(
         "--auto-fix",
         action="store_true",
         help=(
-            "create missing recommended "
-            "files "
-            "(safe only, no legal content)"
+            "create missing "
+            "recommended files "
+            "(safe only)"
         ),
     )
 
@@ -3329,6 +5457,8 @@ def main(
     ] = None,
 ) -> int:
 
+    configure_utf8_stdio()
+
     parser = build_parser()
 
     known, unknown = (
@@ -3337,9 +5467,8 @@ def main(
         )
     )
 
-    # --------------------------------------------------------
-    # v2.7 / v2.8 compatibility shortcuts
-    # --------------------------------------------------------
+    if known.ci_html:
+        known.html_report = True
 
     if known.doctor_json:
         known.doctor = True
@@ -3357,31 +5486,49 @@ def main(
     ):
         known.repair_preview = True
 
-    # --------------------------------------------------------
-    # Repository
-    # --------------------------------------------------------
+    if known.config:
+        config = load_config(
+            Path(
+                known.config
+            ).expanduser()
+        )
+    else:
+        config = load_config(
+            Path(DEFAULT_CONFIG)
+        )
+
+    if (
+        known.repo == "."
+        and config.get(
+            "repo_path"
+        )
+    ):
+        known.repo = str(
+            config[
+                "repo_path"
+            ]
+        )
 
     repo = find_repo(
         Path(known.repo)
     )
 
-    # --------------------------------------------------------
-    # Version
-    # --------------------------------------------------------
-
     if known.version:
-        print(TOOL_VERSION)
-
+        print(
+            TOOL_VERSION
+        )
         return EXIT_OK
 
-    # --------------------------------------------------------
-    # Argument validation
-    # --------------------------------------------------------
-
-    if known.strict_timeout <= 0:
+    if (
+        known.strict_timeout
+        <= 0
+    ):
         print(
-            "❌ --strict-timeout must "
-            "be greater than zero",
+            (
+                "❌ --strict-timeout "
+                "must be greater "
+                "than zero"
+            ),
             file=sys.stderr,
         )
 
@@ -3393,8 +5540,10 @@ def main(
         <= 100
     ):
         print(
-            "❌ --threshold must be "
-            "between 0 and 100",
+            (
+                "❌ --threshold must "
+                "be between 0 and 100"
+            ),
             file=sys.stderr,
         )
 
@@ -3402,19 +5551,280 @@ def main(
 
     if (
         known.watch
-        and known.watch_interval <= 0
+        and known.watch_interval
+        <= 0
     ):
         print(
-            "❌ --watch-interval must "
-            "be greater than zero",
+            (
+                "❌ --watch-interval "
+                "must be greater "
+                "than zero"
+            ),
             file=sys.stderr,
         )
 
         return EXIT_USAGE_ERROR
 
-    # --------------------------------------------------------
-    # Watch
-    # --------------------------------------------------------
+    output_path: Optional[
+        Path
+    ] = None
+
+    if known.output:
+        output_path = (
+            Path(
+                known.output
+            )
+            .expanduser()
+            .resolve()
+        )
+
+    if known.summary:
+        summary = build_summary(
+            repo,
+            known.core,
+        )
+
+        if known.format is None:
+            print_summary(
+                summary
+            )
+
+            return EXIT_OK
+
+        try:
+            content = format_output(
+                summary_payload(
+                    summary
+                ),
+                known.format,
+            )
+
+        except (
+            RuntimeError,
+            ValueError,
+        ) as exc:
+
+            print(
+                f"❌ {exc}",
+                file=sys.stderr,
+            )
+
+            return (
+                EXIT_RUNTIME_ERROR
+            )
+
+        if output_path:
+            if not write_output(
+                content,
+                output_path,
+            ):
+                return (
+                    EXIT_RUNTIME_ERROR
+                )
+
+        else:
+            print(content)
+
+        return EXIT_OK
+
+    if known.history:
+        return show_history(
+            repo,
+            known.history_count,
+        )
+
+    if known.validate_articles:
+        results = (
+            validate_articles(
+                repo
+            )
+        )
+
+        payload = (
+            article_validation_payload(
+                results
+            )
+        )
+
+        if known.format is None:
+            print_article_validation(
+                results
+            )
+
+        else:
+            try:
+                content = (
+                    format_output(
+                        payload,
+                        known.format,
+                    )
+                )
+
+            except (
+                RuntimeError,
+                ValueError,
+            ) as exc:
+
+                print(
+                    f"❌ {exc}",
+                    file=sys.stderr,
+                )
+
+                return (
+                    EXIT_RUNTIME_ERROR
+                )
+
+            if output_path:
+                if not write_output(
+                    content,
+                    output_path,
+                ):
+                    return (
+                        EXIT_RUNTIME_ERROR
+                    )
+
+            else:
+                print(content)
+
+        return (
+            EXIT_OK
+            if payload[
+                "all_valid"
+            ]
+            else (
+                EXIT_VALIDATION_FAILED
+            )
+        )
+
+    if known.check_links:
+        docs_dir = (
+            repo / "docs"
+        )
+
+        if (
+            not docs_dir.exists()
+            or not docs_dir.is_dir()
+        ):
+            print(
+                (
+                    "❌ docs directory "
+                    f"missing: {docs_dir}"
+                ),
+                file=sys.stderr,
+            )
+
+            return (
+                EXIT_VALIDATION_FAILED
+            )
+
+        results = (
+            check_all_links(
+                repo
+            )
+        )
+
+        payload = link_payload(
+            results
+        )
+
+        if known.format is None:
+            print_link_results(
+                results
+            )
+
+        else:
+            try:
+                content = (
+                    format_output(
+                        payload,
+                        known.format,
+                    )
+                )
+
+            except (
+                RuntimeError,
+                ValueError,
+            ) as exc:
+
+                print(
+                    f"❌ {exc}",
+                    file=sys.stderr,
+                )
+
+                return (
+                    EXIT_RUNTIME_ERROR
+                )
+
+            if output_path:
+                if not write_output(
+                    content,
+                    output_path,
+                ):
+                    return (
+                        EXIT_RUNTIME_ERROR
+                    )
+
+            else:
+                print(content)
+
+        return (
+            EXIT_OK
+            if (
+                payload[
+                    "stats"
+                ]["broken"]
+                == 0
+            )
+            else (
+                EXIT_VALIDATION_FAILED
+            )
+        )
+
+    if known.html_report:
+        payload = ci_report(
+            repo,
+            known.core,
+            strict=(
+                known.ci_strict
+            ),
+            timeout_seconds=(
+                known.strict_timeout
+            ),
+            threshold=(
+                known.threshold
+            ),
+        )
+
+        html_path = (
+            output_path
+            if output_path
+            else (
+                repo
+                / "ci-report.html"
+            )
+        )
+
+        ok = generate_html_report(
+            repo,
+            payload,
+            html_path,
+        )
+
+        if not ok:
+            return (
+                EXIT_RUNTIME_ERROR
+            )
+
+        return (
+            EXIT_OK
+            if payload.get(
+                "ok",
+                False,
+            )
+            else (
+                EXIT_VALIDATION_FAILED
+            )
+        )
 
     if known.watch:
         watcher = WatchMode(
@@ -3423,15 +5833,13 @@ def main(
             known.watch_interval,
             known.watch_patterns,
             known.strict_timeout,
+            known.watch_command,
+            known.quiet,
         )
 
         watcher.run()
 
         return EXIT_OK
-
-    # --------------------------------------------------------
-    # Doctor
-    # --------------------------------------------------------
 
     if known.doctor:
         report = doctor(
@@ -3446,13 +5854,23 @@ def main(
                 report,
             )
 
-            print(
-                json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            content = json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
             )
+
+            if output_path:
+                if not write_output(
+                    content,
+                    output_path,
+                ):
+                    return (
+                        EXIT_RUNTIME_ERROR
+                    )
+
+            else:
+                print(content)
 
         else:
             print_doctor(
@@ -3462,23 +5880,27 @@ def main(
         return (
             EXIT_OK
             if report.ok
-            else EXIT_VALIDATION_FAILED
+            else (
+                EXIT_VALIDATION_FAILED
+            )
         )
-
-    # --------------------------------------------------------
-    # Repair Preview
-    # --------------------------------------------------------
 
     if known.repair_preview:
         if (
             known.repair_from_ref
-            and known.repair_source_dir
+            and (
+                known
+                .repair_source_dir
+            )
         ):
             print(
-                "❌ choose only one "
-                "repair source: "
-                "--repair-from-ref OR "
-                "--repair-source-dir",
+                (
+                    "❌ choose only one "
+                    "repair source: "
+                    "--repair-from-ref "
+                    "OR "
+                    "--repair-source-dir"
+                ),
                 file=sys.stderr,
             )
 
@@ -3486,12 +5908,19 @@ def main(
 
         if (
             not known.repair_from_ref
-            and not known.repair_source_dir
+            and not (
+                known
+                .repair_source_dir
+            )
         ):
             print(
-                "❌ --repair-preview requires "
-                "--repair-from-ref REF or "
-                "--repair-source-dir DIR",
+                (
+                    "❌ --repair-preview "
+                    "requires "
+                    "--repair-from-ref REF "
+                    "or "
+                    "--repair-source-dir DIR"
+                ),
                 file=sys.stderr,
             )
 
@@ -3511,7 +5940,8 @@ def main(
         if known.repair_source_dir:
             source_dir = (
                 Path(
-                    known.repair_source_dir
+                    known
+                    .repair_source_dir
                 )
                 .expanduser()
                 .resolve()
@@ -3519,12 +5949,16 @@ def main(
 
             if (
                 not source_dir.exists()
-                or not source_dir.is_dir()
+                or not (
+                    source_dir.is_dir()
+                )
             ):
                 print(
-                    "❌ repair source "
-                    "directory not found: "
-                    f"{source_dir}",
+                    (
+                        "❌ repair source "
+                        "directory not "
+                        f"found: {source_dir}"
+                    ),
                     file=sys.stderr,
                 )
 
@@ -3533,16 +5967,19 @@ def main(
                 )
 
         try:
-            sources_ok, items = (
-                repair_preview(
-                    repo,
-                    files,
-                    from_ref=(
-                        known
-                        .repair_from_ref
-                    ),
-                    source_dir=source_dir,
-                )
+            (
+                sources_ok,
+                items,
+            ) = repair_preview(
+                repo,
+                files,
+                from_ref=(
+                    known
+                    .repair_from_ref
+                ),
+                source_dir=(
+                    source_dir
+                ),
             )
 
         except ValueError as exc:
@@ -3560,19 +5997,22 @@ def main(
         return (
             EXIT_OK
             if sources_ok
-            else EXIT_VALIDATION_FAILED
+            else (
+                EXIT_VALIDATION_FAILED
+            )
         )
 
-    # --------------------------------------------------------
-    # Manifest path
-    # --------------------------------------------------------
-
     manifest_path = (
-        Path(known.manifest)
+        Path(
+            known.manifest
+        )
         .expanduser()
     )
 
-    if not manifest_path.is_absolute():
+    if not (
+        manifest_path
+        .is_absolute()
+    ):
         manifest_path = (
             repo
             / manifest_path
@@ -3582,10 +6022,6 @@ def main(
         manifest_path.resolve()
     )
 
-    # --------------------------------------------------------
-    # Hash manifest
-    # --------------------------------------------------------
-
     if known.hash_manifest:
         files = resolve_hash_files(
             repo,
@@ -3594,8 +6030,10 @@ def main(
 
         if not files:
             print(
-                "❌ no files available "
-                "for hashing",
+                (
+                    "❌ no files available "
+                    "for hashing"
+                ),
                 file=sys.stderr,
             )
 
@@ -3615,10 +6053,6 @@ def main(
             else EXIT_RUNTIME_ERROR
         )
 
-    # --------------------------------------------------------
-    # Verify hashes
-    # --------------------------------------------------------
-
     if known.verify_hashes:
         ok = verify_manifest(
             repo,
@@ -3628,18 +6062,18 @@ def main(
         return (
             EXIT_OK
             if ok
-            else EXIT_VALIDATION_FAILED
+            else (
+                EXIT_VALIDATION_FAILED
+            )
         )
-
-    # --------------------------------------------------------
-    # CI JSON
-    # --------------------------------------------------------
 
     if known.ci_json is not None:
         payload = ci_report(
             repo,
             known.core,
-            strict=known.ci_strict,
+            strict=(
+                known.ci_strict
+            ),
             timeout_seconds=(
                 known.strict_timeout
             ),
@@ -3648,9 +6082,11 @@ def main(
             ),
         )
 
-        write_ok = write_json_output(
-            payload,
-            known.ci_json,
+        write_ok = (
+            write_json_output(
+                payload,
+                known.ci_json,
+            )
         )
 
         if not write_ok:
@@ -3664,45 +6100,40 @@ def main(
                 "ok",
                 False,
             )
-            else EXIT_VALIDATION_FAILED
+            else (
+                EXIT_VALIDATION_FAILED
+            )
         )
 
-    # --------------------------------------------------------
-    # Strict
-    # --------------------------------------------------------
-
     if known.strict:
-        success, _results = (
-            run_strict(
-                repo,
-                known.core,
-                timeout_seconds=(
-                    known.strict_timeout
-                ),
-                quiet=False,
-                include_health=True,
-            )
+        (
+            success,
+            _results,
+        ) = run_strict(
+            repo,
+            known.core,
+            timeout_seconds=(
+                known.strict_timeout
+            ),
+            quiet=False,
+            include_health=True,
         )
 
         return (
             EXIT_OK
             if success
-            else EXIT_VALIDATION_FAILED
+            else (
+                EXIT_VALIDATION_FAILED
+            )
         )
-
-    # --------------------------------------------------------
-    # Auto-fix
-    # --------------------------------------------------------
 
     if known.auto_fix:
         return auto_fix(
             repo,
-            dry_run=known.dry_run,
+            dry_run=(
+                known.dry_run
+            ),
         )
-
-    # --------------------------------------------------------
-    # Compare
-    # --------------------------------------------------------
 
     if known.compare:
         return compare_status(
@@ -3710,10 +6141,6 @@ def main(
             known.compare,
             known.core,
         )
-
-    # --------------------------------------------------------
-    # Report
-    # --------------------------------------------------------
 
     if known.report:
         try:
@@ -3725,14 +6152,30 @@ def main(
                 )
             )
 
-            formatted = (
-                format_output(
+            if known.format:
+                content = format_output(
                     report_data,
                     known.format,
                 )
-            )
 
-            print(formatted)
+            else:
+                content = json.dumps(
+                    report_data,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+
+            if output_path:
+                if not write_output(
+                    content,
+                    output_path,
+                ):
+                    return (
+                        EXIT_RUNTIME_ERROR
+                    )
+
+            else:
+                print(content)
 
             return EXIT_OK
 
@@ -3742,6 +6185,7 @@ def main(
             ValueError,
             OSError,
         ) as exc:
+
             print(
                 f"❌ {exc}",
                 file=sys.stderr,
@@ -3751,10 +6195,6 @@ def main(
                 EXIT_RUNTIME_ERROR
             )
 
-    # --------------------------------------------------------
-    # Forward unknown args to core
-    # --------------------------------------------------------
-
     if unknown:
         return run_core(
             repo,
@@ -3763,10 +6203,6 @@ def main(
             timeout_seconds=None,
             quiet=False,
         )
-
-    # --------------------------------------------------------
-    # Nothing selected
-    # --------------------------------------------------------
 
     parser.print_help()
 
@@ -3778,6 +6214,4 @@ def main(
 # ============================================================
 
 if __name__ == "__main__":
-    raise SystemExit(
-        main()
-    )
+    raise SystemExit(main())
