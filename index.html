@@ -1,276 +1,348 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>نظم داد — چارچوب قانون اساسی برای ایران</title>
+  <title>نظم داد — نظم، حق، آزادی</title>
+  <meta name="description" content="نظم داد؛ چارچوبی برای قدرت محدود، حق تضمین‌شده، نهاد پاسخگو و مطالعه ساختارهای حقوقی و نهادی.">
+  <meta name="theme-color" content="#244b7a">
 
-<meta name="description" content="پروژه‌ای مستقل برای طراحی چارچوب قانون اساسی ایران بر پایه توزیع قدرت، حکومت قانون، حقوق بنیادین و سازوکارهای ضدبن‌بست.">
+  <meta property="og:title" content="نظم داد — نظم، حق، آزادی">
+  <meta property="og:description" content="چارچوبی برای قدرت محدود، حق تضمین‌شده و نهاد پاسخگو">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary_large_image">
 
-<meta property="og:title" content="نظم داد — چارچوب قانون اساسی برای ایران">
-<meta property="og:image" content="assets/images/og-image.png">
+  <style>
+    :root{
+      --bg:#ffffff;--surface:#ffffff;--surface-soft:#f6f9fd;--surface-accent:#eef4fb;
+      --text:#1d2d42;--muted:#5c6c80;--muted-2:#7c8a9d;--brand:#315f96;
+      --brand-2:#234b78;--brand-3:#173957;--border:#e2e8f0;--border-strong:#c9d6e5;
+      --shadow:0 14px 40px rgba(30,62,96,.08);--radius:18px;--radius-lg:28px;--container:1180px;
+    }
+    *{box-sizing:border-box}
+    html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+    body{margin:0;font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.9;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+    img{max-width:100%;display:block}
+    a{color:inherit}
+    button,input,textarea,select{font:inherit}
+    :focus-visible{outline:3px solid rgba(49,95,150,.28);outline-offset:3px}
+    .container{width:min(var(--container),calc(100% - 40px));margin-inline:auto}
+    .skip-link{position:absolute;top:-60px;right:16px;z-index:2000;background:#111827;color:#fff;padding:10px 14px;border-radius:8px;text-decoration:none}
+    .skip-link:focus{top:16px}
 
-<link rel="icon" href="assets/images/favicon.ico">
-<link rel="stylesheet" href="assets/css/style.css">
+    .site-header{position:sticky;top:0;z-index:1000;background:rgba(255,255,255,.93);backdrop-filter:blur(14px);border-bottom:1px solid rgba(226,232,240,.9);transition:box-shadow .25s ease}
+    .site-header.scrolled{box-shadow:0 8px 28px rgba(31,56,87,.07)}
+    .header-inner{min-height:74px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+    .brand{display:flex;align-items:center;gap:12px;text-decoration:none;flex-shrink:0}
+    .brand-logo{width:46px;height:46px;object-fit:contain;border-radius:12px}
+    .brand-fallback{width:46px;height:46px;display:none;align-items:center;justify-content:center;border-radius:13px;background:linear-gradient(145deg,#335f96,#1e426c);color:#fff;font-weight:800;font-size:1.1rem}
+    .brand-copy{line-height:1.2}.brand-copy strong{display:block;color:var(--brand-3);font-size:1.08rem}.brand-copy span{display:block;color:var(--muted-2);font-size:.68rem;letter-spacing:.08em;direction:ltr;text-align:right}
+    .main-nav{display:flex;align-items:center;gap:24px}
+    .main-nav a{color:#344960;text-decoration:none;font-weight:650;font-size:.94rem;padding:8px 0;border-bottom:2px solid transparent}
+    .main-nav a:hover,.main-nav a[aria-current="page"]{color:var(--brand);border-bottom-color:var(--brand)}
+    .nav-toggle{display:none;border:0;background:transparent;color:var(--brand-3);font-size:1.55rem;cursor:pointer;padding:8px;border-radius:10px}
+
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:10px 22px;border-radius:999px;text-decoration:none;font-weight:750;transition:transform .2s ease,box-shadow .2s ease,background .2s ease}
+    .btn:hover{transform:translateY(-2px)}
+    .btn-primary{background:var(--brand);color:#fff;box-shadow:0 8px 24px rgba(49,95,150,.22)}
+    .btn-primary:hover{background:var(--brand-2)}
+    .btn-secondary{background:#f4f7fb;color:var(--brand-2);border:1px solid var(--border-strong)}
+    .btn-secondary:hover{background:#eaf1f9}
+
+    .hero{position:relative;overflow:hidden;padding:92px 0 80px;background:radial-gradient(circle at 82% 12%,rgba(67,111,165,.10),transparent 29%),linear-gradient(175deg,#f7faff 0%,#ffffff 67%)}
+    .hero-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:64px;align-items:center}
+    .eyebrow{margin:0 0 10px;color:#708197;font-size:.9rem;font-weight:750}
+    .hero h1{margin:0;color:var(--brand-3);font-size:clamp(3rem,7vw,5.5rem);line-height:1.1;letter-spacing:-.035em}
+    .tagline{margin:8px 0 22px;color:#536a84;font-size:1.06rem;font-weight:750}
+    .lead{max-width:680px;margin:0 0 14px;color:#4d6076;font-size:1.06rem}
+    .statement{max-width:700px;margin:26px 0 0;padding:12px 18px;border-right:4px solid var(--brand);border-radius:0 12px 12px 0;background:rgba(237,244,252,.72);color:var(--brand-3);font-size:1.25rem;font-weight:800}
+    .hero-actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:30px}
+    .hero-visual{min-height:340px;display:flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:var(--radius-lg);background:rgba(255,255,255,.72);box-shadow:var(--shadow);padding:34px}
+    .hero-visual img{width:min(260px,72%);object-fit:contain}
+    .hero-emblem-fallback{display:none;width:210px;height:210px;border-radius:50%;align-items:center;justify-content:center;background:linear-gradient(145deg,#3d6ba5,#1f466f);color:#fff;font-size:3rem;font-weight:900}
+
+    .section{padding:82px 0}
+    .section-soft{background:var(--surface-soft);border-top:1px solid #edf1f6;border-bottom:1px solid #edf1f6}
+    .section-heading{max-width:790px;margin:0 auto 44px;text-align:center}
+    .section-kicker{margin:0 0 6px;color:#7e8da2;font-size:.9rem;font-weight:750}
+    .section-title{margin:0 0 12px;color:var(--brand-3);font-size:clamp(1.95rem,4vw,2.75rem);line-height:1.45}
+    .section-subtitle{margin:0;color:#66768a;font-size:1.03rem}
+
+    .principles-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px}
+    .principle-card{min-height:285px;display:flex;flex-direction:column;padding:28px;border:1px solid var(--border);border-radius:20px;background:#fff;color:inherit;text-decoration:none;box-shadow:0 6px 22px rgba(37,64,97,.045);transition:transform .22s ease,box-shadow .22s ease,border-color .22s ease}
+    .principle-card:hover{transform:translateY(-6px);border-color:#b9cada;box-shadow:0 16px 42px rgba(38,69,105,.10)}
+    .principle-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .principle-number{display:inline-flex;align-items:center;justify-content:center;min-width:62px;height:30px;padding:0 10px;border-radius:999px;background:var(--surface-accent);color:#667d98;font-size:.82rem;font-weight:800}
+    .principle-arrow{color:var(--brand);font-size:1.25rem}
+    .principle-card h3{margin:24px 0 12px;color:var(--brand-3);font-size:1.24rem;line-height:1.75}
+    .principle-card p{margin:0;color:#5d6d80;font-size:.96rem}
+    .principle-key{margin-top:auto!important;padding-top:24px;color:var(--brand)!important;font-weight:800}
+
+    .pathways-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+    .pathway-card{padding:26px;border:1px solid var(--border);border-radius:18px;background:#fff}
+    .pathway-card span{color:#8997a9;font-size:.82rem;font-weight:750}
+    .pathway-card h3{margin:14px 0 9px;color:var(--brand-2);font-size:1.18rem}
+    .pathway-card p{margin:0;color:#637287;font-size:.95rem}
+    .pathway-card a{display:inline-block;margin-top:18px;color:var(--brand);font-weight:800;text-decoration:none}
+
+    .philosophy-grid{display:grid;grid-template-columns:.8fr 1.2fr;gap:64px;align-items:start}
+    .philosophy-left{position:sticky;top:110px}
+    .philosophy-left h2{margin:0;color:var(--brand-3);font-size:clamp(2rem,4vw,3rem);line-height:1.55}
+    .philosophy-right h3{margin:0 0 10px;color:var(--brand-2);font-size:1.2rem}
+    .philosophy-right p{margin:0 0 22px;color:#536579}
+    .quote{margin:28px 0;padding:22px 24px;border-right:4px solid var(--brand);border-radius:12px;background:#fff;color:var(--brand-2);font-weight:750;box-shadow:0 6px 20px rgba(38,66,102,.04)}
+
+    .audio-band{padding:34px;display:grid;grid-template-columns:1fr auto;gap:28px;align-items:center;border:1px solid var(--border);border-radius:22px;background:linear-gradient(145deg,#f7faff,#fff)}
+    .audio-band h2{margin:0 0 8px;color:var(--brand-3);font-size:1.6rem}
+    .audio-band p{margin:0;color:#627287}
+
+    .cta{text-align:center;padding:82px 0}
+    .cta-inner{max-width:820px;margin:auto}
+    .cta h2{margin:0 0 14px;color:var(--brand-3);font-size:clamp(2rem,4vw,2.9rem);line-height:1.6}
+    .cta p{margin:0 auto 26px;color:#697789;max-width:680px}
+    .cta-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
+
+    .site-footer{border-top:1px solid var(--border);background:#fbfcfe;padding:32px 0}
+    .footer-inner{display:flex;align-items:center;justify-content:space-between;gap:20px;color:#718094;font-size:.88rem}
+    .footer-links{display:flex;flex-wrap:wrap;gap:18px}
+    .footer-links a{color:#506a87;text-decoration:none}
+
+    @media (max-width:980px){
+      .hero-grid,.philosophy-grid{grid-template-columns:1fr}
+      .philosophy-left{position:static}
+      .hero-visual{min-height:250px}
+      .principles-grid,.pathways-grid{grid-template-columns:1fr}
+      .audio-band{grid-template-columns:1fr;text-align:center}
+    }
+    @media (max-width:720px){
+      .header-inner{min-height:64px;flex-wrap:wrap;padding:10px 0}
+      .nav-toggle{display:block}
+      .main-nav{display:none;width:100%;flex-direction:column;align-items:stretch;gap:2px;padding:10px 0 14px;border-top:1px solid var(--border)}
+      .main-nav.open{display:flex}
+      .main-nav a{padding:10px 4px;border-bottom:0}
+      .hero{padding:58px 0 50px}
+      .section,.cta{padding:58px 0}
+      .footer-inner{flex-direction:column;text-align:center}
+    }
+    @media (max-width:480px){
+      .container{width:calc(100% - 24px)}
+      .hero h1{font-size:2.55rem}
+      .hero-actions .btn,.cta-actions .btn{width:100%}
+      .principle-card{padding:23px}
+    }
+    @media (prefers-reduced-motion:reduce){
+      *,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}
+    }
+  </style>
 </head>
 
 <body>
+<a class="skip-link" href="#main-content">رفتن به محتوای اصلی</a>
 
-<header class="site-header">
+<header class="site-header" id="siteHeader">
   <div class="container header-inner">
-
-    <a class="brand" href="./">
-      <img
-        src="assets/images/logo.png"
-        alt="لوگوی نظم داد"
-        width="48"
-        height="48"
-      >
-      <span>نظم داد</span>
+    <a class="brand" href="./index.html" aria-label="صفحه اصلی نظم داد">
+      <img class="brand-logo" src="./assets/images/logo.svg" alt="نشان نظم داد"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <span class="brand-fallback" aria-hidden="true">ن‌د</span>
+      <span class="brand-copy">
+        <strong>نظم داد</strong>
+        <span>NAZM DAD</span>
+      </span>
     </a>
 
-    <nav class="main-nav">
-      <a href="#why">چرا نظم داد؟</a>
-      <a href="#principles">اصول</a>
-      <a href="#documents">اسناد</a>
-      <a href="#about">درباره</a>
-      <a href="en/" lang="en">English</a>
-    </nav>
+    <button class="nav-toggle" id="navToggle" type="button" aria-label="باز و بسته کردن منو" aria-expanded="false">☰</button>
 
+    <nav class="main-nav" id="mainNav" aria-label="ناوبری اصلی">
+      <a href="./index.html" aria-current="page">خانه</a>
+      <a href="./library.html">کتابخانه</a>
+      <a href="./audio.html">کتابخانه صوتی</a>
+      <a href="#principles">اصول</a>
+      <a href="#philosophy">فلسفه</a>
+      <a href="./about.html">درباره</a>
+    </nav>
   </div>
 </header>
 
-
-<main>
-
+<main id="main-content">
   <section class="hero">
     <div class="container hero-grid">
-
       <div>
-        <p class="eyebrow">NAZM DAD</p>
-
-        <h1>چارچوب قانون اساسی برای ایران</h1>
-
-        <p class="lead">
-          طرحی برای توزیع قدرت، حکومت قانون، تضمین حقوق
-          و جلوگیری از بن‌بست نهادی.
-        </p>
-
+        <p class="eyebrow">چارچوبی برای قدرت محدود، حق تضمین‌شده و نهاد پاسخگو</p>
+        <h1>نظم داد</h1>
+        <p class="tagline">نظم، حق، آزادی</p>
+        <p class="lead">مسئله فقط این نیست که چه کسی قدرت را در اختیار دارد؛ مسئله مهم‌تر این است که قدرت چگونه محدود می‌شود، حقوق چگونه از وعده به واقعیت تبدیل می‌شوند و نهادها چگونه پاسخگو باقی می‌مانند.</p>
+        <p class="lead">نظم داد تلاشی است برای ساختن چارچوبی که آزادی و عدالت را به فضیلت یک فرد، یک دولت یا یک نسل وابسته نکند.</p>
+        <p class="statement">مسئله، یافتن حاکم خوب نیست؛ ساختن نظمی است که به حاکم خوب وابسته نباشد.</p>
         <div class="hero-actions">
-          <a class="btn primary" href="#documents">
-            مشاهده اسناد
-          </a>
-
-          <a class="btn secondary" href="#principles">
-            اصول بنیادین
-          </a>
+          <a class="btn btn-primary" href="./library.html">ورود به کتابخانه</a>
+          <a class="btn btn-secondary" href="#principles">مطالعه سه اصل</a>
         </div>
       </div>
 
-      <div class="hero-logo">
-        <img
-          src="assets/images/logo.png"
-          alt="نشان نظم داد"
-        >
+      <div class="hero-visual" aria-label="هویت بصری نظم داد">
+        <img src="./assets/images/logo.svg" alt="لوگوی نظم داد"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="hero-emblem-fallback" aria-hidden="true">ن‌د</div>
       </div>
-
     </div>
   </section>
 
-
-  <section class="proposition">
-    <div class="container proposition-grid">
-      <span>یک ایران</span>
-      <span>چهار تجلی برابر قدرت</span>
-      <span>بدون مرکز مطلق</span>
-      <span>یک قانون مشترک</span>
-    </div>
-  </section>
-
-
-  <section id="why" class="section">
+  <section class="section section-soft" aria-labelledby="pathways-title">
     <div class="container">
+      <div class="section-heading">
+        <p class="section-kicker">مسیر مطالعه</p>
+        <h2 class="section-title" id="pathways-title">از ایده تا سازوکار</h2>
+        <p class="section-subtitle">برای فهم نظم سیاسی فقط دانستن اصول کافی نیست؛ باید دید این اصول چگونه به قانون، نهاد و سازوکار قابل اجرا تبدیل می‌شوند.</p>
+      </div>
 
-      <p class="section-kicker">مسئله</p>
-
-      <h2>چرا نظم داد؟</h2>
-
-      <div class="grid four">
-
-        <article class="card">
-          <h3>تمرکز قدرت</h3>
-          <p>
-            کاهش امکان تمرکز پایدار و بدون پاسخ‌گویی قدرت
-            در یک نقطه یا نهاد.
-          </p>
+      <div class="pathways-grid">
+        <article class="pathway-card">
+          <span>۰۱</span>
+          <h3>حقوق و آزادی‌ها</h3>
+          <p>حق چگونه تعریف می‌شود و چه چیزی آن را از وعده‌ای سیاسی به یک ضمانت واقعی تبدیل می‌کند؟</p>
+          <a href="./library.html">مطالعه اسناد ←</a>
         </article>
 
-        <article class="card">
-          <h3>بن‌بست نهادی</h3>
-          <p>
-            طراحی سازوکارهای تداوم و خروج از انسداد
-            در انتصابات و حکمرانی.
-          </p>
+        <article class="pathway-card">
+          <span>۰۲</span>
+          <h3>قدرت و محدودیت</h3>
+          <p>قدرت لازم برای اداره جامعه چگونه حفظ می‌شود بدون آنکه به اختیار نامحدود تبدیل شود؟</p>
+          <a href="./principle-1.html">مطالعه اصل اول ←</a>
         </article>
 
-        <article class="card">
-          <h3>تضمین حقوق</h3>
-          <p>
-            پیوند حقوق بنیادین با ضمانت‌های قضایی
-            و محدودیت‌های روشن بر دولت.
-          </p>
+        <article class="pathway-card">
+          <span>۰۳</span>
+          <h3>پاسخگویی و اصلاح</h3>
+          <p>نهادها چگونه باید قابل پرسش، قابل بررسی و در صورت خطا قابل اصلاح باقی بمانند؟</p>
+          <a href="./principle-3.html">مطالعه اصل سوم ←</a>
         </article>
-
-        <article class="card">
-          <h3>تداوم حکمرانی</h3>
-          <p>
-            قواعد روشن جانشینی و استمرار نهادها
-            در شرایط بحران و انتقال.
-          </p>
-        </article>
-
       </div>
     </div>
   </section>
 
-
-  <section id="principles" class="section alt">
+  <section class="section" id="principles" aria-labelledby="principles-title">
     <div class="container">
+      <div class="section-heading">
+        <p class="section-kicker">سه اصل نظم داد</p>
+        <h2 class="section-title" id="principles-title">سه مرز برای قدرت و حق</h2>
+        <p class="section-subtitle">هر اصل صفحه مستقل خود را دارد. با انتخاب هر کارت، صفحه کامل همان اصل نمایش داده می‌شود.</p>
+      </div>
 
-      <p class="section-kicker">فلسفه نهادی</p>
+      <div class="principles-grid">
+        <a class="principle-card" href="./principle-1.html">
+          <div class="principle-top"><span class="principle-number">اصل ۱</span><span class="principle-arrow" aria-hidden="true">←</span></div>
+          <h3>هیچ قدرتی مطلق نیست</h3>
+          <p>قدرت برای اداره جامعه ضروری است؛ اما قدرت مشروع با قدرت نامحدود یکی نیست. هر اختیار باید مرز، نظارت و امکان توقف داشته باشد.</p>
+          <p class="principle-key">قدرت مشروع، قدرت نامحدود نیست.</p>
+        </a>
 
-      <h2>چهار اصل بنیادین</h2>
+        <a class="principle-card" href="./principle-2.html">
+          <div class="principle-top"><span class="principle-number">اصل ۲</span><span class="principle-arrow" aria-hidden="true">←</span></div>
+          <h3>هیچ حقی بدون ضمانت کافی نیست</h3>
+          <p>نوشتن یک حق در قانون لازم است اما کافی نیست. حق باید همراه با امکان اعتراض، رسیدگی مستقل و سازوکار واقعی دفاع باشد.</p>
+          <p class="principle-key">حق باید راه دفاع از خود داشته باشد.</p>
+        </a>
 
-      <div class="grid four">
-
-        <article class="card">
-          <span class="num">۰۱</span>
-          <h3>تفکیک قدرت</h3>
-          <p>
-            استقلال نهادی قوای مقننه، مجریه و قضائیه.
-          </p>
-        </article>
-
-        <article class="card">
-          <span class="num">۰۲</span>
-          <h3>مهار متقابل</h3>
-          <p>
-            هیچ قوه‌ای برتر و خارج از سازوکار
-            نظارت و پاسخ‌گویی نیست.
-          </p>
-        </article>
-
-        <article class="card">
-          <span class="num">۰۳</span>
-          <h3>چندمرکزی</h3>
-          <p>
-            توزیع قدرت میان نهادها و سطوح حکمرانی،
-            بدون مرکز فرماندهی مطلق.
-          </p>
-        </article>
-
-        <article class="card">
-          <span class="num">۰۴</span>
-          <h3>وحدت در قانون</h3>
-          <p>
-            همه نهادها در یک چارچوب قانون اساسی مشترک
-            عمل می‌کنند.
-          </p>
-        </article>
-
+        <a class="principle-card" href="./principle-3.html">
+          <div class="principle-top"><span class="principle-number">اصل ۳</span><span class="principle-arrow" aria-hidden="true">←</span></div>
+          <h3>هیچ نهادی فراتر از پاسخگویی نیست</h3>
+          <p>هر نهادی که درباره حقوق، منابع یا زندگی مردم تصمیم می‌گیرد باید بتواند دلیل تصمیم خود را توضیح دهد و عملکردش قابل بررسی باشد.</p>
+          <p class="principle-key">هرجا اختیار هست، پاسخگویی نیز باید باشد.</p>
+        </a>
       </div>
     </div>
   </section>
 
+  <section class="section section-soft" id="philosophy">
+    <div class="container philosophy-grid">
+      <div class="philosophy-left">
+        <p class="section-kicker">فلسفه نظم داد</p>
+        <h2>ساختن نظمی که آزادی را به نیت افراد وابسته نکند</h2>
+      </div>
 
-  <section id="documents" class="section">
-    <div class="container narrow">
-
-      <p class="section-kicker">متن و مستندات</p>
-
-      <h2>اسناد پروژه</h2>
-
-      <div class="docs">
-
-        <a href="docs/0.5.md">
-          <strong>نسخه ۰.۵</strong>
-          <span>نسخه نهایی — متن کامل ۷۳ ماده‌ای</span>
-        </a>
-
-        <a href="docs/0.4.md">
-          <strong>نسخه ۰.۴</strong>
-          <span>نسخه نهایی قفل‌شده — ۶۱ ماده</span>
-        </a>
-
-        <a href="docs/changelog.md">
-          <strong>Changelog</strong>
-          <span>تغییرات رسمی نسخه ۰.۴ تا ۰.۵</span>
-        </a>
-
-        <a href="docs/rules.md">
-          <strong>قواعد تفسیری</strong>
-          <span>۱۰ قاعده فعال و وضعیت قواعد پیشین</span>
-        </a>
-
-        <a href="docs/decisions.md">
-          <strong>تصمیمات تأسیسی</strong>
-          <span>گره‌های طراحی و اصلاحات RC</span>
-        </a>
-
+      <div class="philosophy-right">
+        <h3>قدرت لازم است، اما باید طراحی شود</h3>
+        <p>جامعه بدون قدرت عمومی نمی‌تواند قانون را اجرا کند، امنیت را حفظ کند یا خدمات مشترک را سازمان دهد. هدف حذف قدرت نیست؛ هدف این است که قدرت از ابتدا با مرز، تقسیم اختیار، نظارت و پاسخگویی طراحی شود.</p>
+        <div class="quote">اگر آزادی فقط تا زمانی باقی بماند که صاحب قدرت انسان خوبی باشد، هنوز آزادی بر ساختاری پایدار تکیه ندارد.</div>
+        <h3>حق باید قابل دفاع باشد</h3>
+        <p>اعلام حقوق ضروری است، اما یک حق زمانی واقعی می‌شود که نقض آن قابل اعتراض باشد، مرجعی مستقل بتواند تخلف را بررسی کند و امکان اصلاح یا جبران وجود داشته باشد.</p>
+        <h3>اعتماد از قابلیت اصلاح می‌آید</h3>
+        <p>هیچ دولت، دادگاه، پارلمان، رسانه، شرکت یا سازمان انسانی از خطا مصون نیست. نهاد قابل اعتماد نهادی نیست که ادعا کند اشتباه نمی‌کند؛ نهادی است که خطای آن قابل کشف، بررسی و اصلاح باشد.</p>
       </div>
     </div>
   </section>
 
-
-  <section id="about" class="section alt">
-    <div class="container narrow">
-
-      <p class="section-kicker">درباره</p>
-
-      <h2>یک پروژه مستقل قانون اساسی</h2>
-
-      <p class="body-lg">
-        «نظم داد» یک پروژه طراحی قانون اساسی برای ایران است
-        که بر توزیع قدرت، حکومت قانون، خودگردانی سرزمینی،
-        حقوق بنیادین و سازوکارهای ضدبن‌بست تمرکز دارد.
-        پروژه به‌صورت مستقل، غیرحزبی و غیرمذهبی تعریف شده است.
-      </p>
-
+  <section class="section" aria-labelledby="audio-title">
+    <div class="container">
+      <div class="audio-band">
+        <div>
+          <h2 id="audio-title">کتابخانه صوتی</h2>
+          <p>نسخه صوتی محتوا می‌تواند دسترسی‌پذیری، مطالعه در حرکت و تجربه چندرسانه‌ای نظم داد را گسترش دهد.</p>
+        </div>
+        <a class="btn btn-secondary" href="./audio.html">ورود به کتابخانه صوتی</a>
+      </div>
     </div>
   </section>
 
+  <section class="cta">
+    <div class="container cta-inner">
+      <h2>آزادی پایدار با محدود کردن قدرت آغاز می‌شود</h2>
+      <p>کتابخانه نظم داد مجموعه‌ای از اسناد، تحلیل‌ها و چارچوب‌هایی است که این اصول را از سطح ایده به طراحی نهادی نزدیک می‌کند.</p>
+      <div class="cta-actions">
+        <a class="btn btn-primary" href="./library.html">مشاهده کتابخانه</a>
+        <a class="btn btn-secondary" href="./about.html">درباره پروژه</a>
+      </div>
+    </div>
+  </section>
 </main>
 
-
 <footer class="site-footer">
-  <div class="container footer-grid">
-
-    <div class="footer-brand">
-      <img
-        src="assets/images/logo.png"
-        alt=""
-        width="36"
-        height="36"
-      >
-      <strong>نظم داد — Nazm Dad</strong>
-    </div>
-
-    <div>
-      <a href="en/">English</a>
-      ·
-      <a href="mailto:nazmdad@proton.me">تماس</a>
-    </div>
-
-    <small>
-      کد وب‌سایت: MIT · اسناد: CC BY 4.0
-    </small>
-
+  <div class="container footer-inner">
+    <span>© نظم داد</span>
+    <nav class="footer-links" aria-label="پیوندهای پایین صفحه">
+      <a href="./index.html">خانه</a>
+      <a href="./library.html">کتابخانه</a>
+      <a href="./audio.html">صوتی</a>
+      <a href="#principles">اصول</a>
+      <a href="./about.html">درباره</a>
+    </nav>
   </div>
 </footer>
 
+<script>
+(function () {
+  const toggle = document.getElementById("navToggle");
+  const nav = document.getElementById("mainNav");
+  const header = document.getElementById("siteHeader");
 
-<script src="assets/js/main.js" defer></script>
+  if (toggle && nav) {
+    toggle.addEventListener("click", function () {
+      const open = nav.classList.toggle("open");
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.textContent = open ? "✕" : "☰";
+    });
 
+    nav.querySelectorAll("a").forEach(function (link) {
+      link.addEventListener("click", function () {
+        if (window.innerWidth <= 720) {
+          nav.classList.remove("open");
+          toggle.setAttribute("aria-expanded", "false");
+          toggle.textContent = "☰";
+        }
+      });
+    });
+  }
+
+  if (header) {
+    const updateHeader = function () {
+      header.classList.toggle("scrolled", window.scrollY > 16);
+    };
+    updateHeader();
+    window.addEventListener("scroll", updateHeader, { passive: true });
+  }
+})();
+</script>
 </body>
 </html>

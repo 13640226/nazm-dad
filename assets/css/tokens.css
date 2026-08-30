@@ -1,0 +1,22 @@
+/* Nazm Dad design tokens */
+:root {
+  --navy:#23354d;
+  --navy-deep:#17263a;
+  --gold:#c9a86c;
+  --gold-dark:#9d7b3e;
+  --gold-light:#ead9b8;
+  --cream:#faf7f0;
+  --cream-soft:#f4efe4;
+  --cream-card:#fffdf8;
+  --text:#27313d;
+  --text-muted:#6d7480;
+  --border:#ddd5c7;
+  --border-light:#eee8dc;
+  --radius:14px;
+  --radius-sm:9px;
+  --shadow-card:0 8px 28px rgba(23,38,58,.06);
+  --shadow-hover:0 12px 36px rgba(23,38,58,.12);
+  --shadow-header:0 5px 18px rgba(23,38,58,.07);
+  --transition:180ms ease;
+  color-scheme:light;
+}

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "documents": [
+    {"id":"0.5","file":"./docs/0.5.md","title":"نسخه ۰.۵","subtitle":"صورت فعلی معماری نهادی پروژه","status":"متن مرجع","order":1,"tags":["قانون اساسی","قدرت","حقوق"]},
+    {"id":"0.4","file":"./docs/0.4.md","title":"نسخه ۰.۴","subtitle":"مرحله‌ای پیشین از اندیشهٔ نهادی","status":"نسخه تاریخی","order":2,"tags":["قانون اساسی","تاریخچه"]},
+    {"id":"rules","file":"./docs/rules.md","title":"قواعد تفسیری","subtitle":"منطق تفسیر متن قانون","status":"فعال","order":3,"tags":["تفسیر","روش‌شناسی"]},
+    {"id":"decisions","file":"./docs/decisions.md","title":"تصمیمات تأسیسی","subtitle":"سابقه طراحی نهادی و انتخاب‌های کلیدی","status":"ثبت شده","order":4,"tags":["تصمیمات","طراحی"]}
+  ],
+  "media": [
+    {"id":"audio-001","type":"audio","title":"نمونه صوتی نظم داد","subtitle":"فایل آزمایشی برای پلیر","description":"این فایل کوتاه فقط برای آزمون قابلیت پخش و دانلود در نسخه توسعه است.","src":"./assets/media/audio/sample.mp3","duration":"00:06","thumbnail":"./assets/images/media/audio-default.png","tags":["نمونه","صوت"],"order":100},
+    {"id":"video-001","type":"video","title":"نمونه ویدئویی نظم داد","subtitle":"فایل آزمایشی برای پلیر ویدئو","description":"این ویدئو کوتاه فقط برای آزمون قابلیت پخش، Seek و دانلود در نسخه توسعه است.","src":"./assets/media/video/sample.mp4","poster":"./assets/images/media/video-poster.jpg","tags":["نمونه","ویدئو"],"order":101}
+  ]
+}

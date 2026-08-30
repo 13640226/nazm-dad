@@ -1,0 +1,365 @@
+/* Nazm Dad — Shared styles for the Three Principles pages */
+
+:root {
+  --principle-brand-50: var(--brand-50, #F5F8FD);
+  --principle-brand-100: var(--brand-100, #EAF0FA);
+  --principle-brand-300: var(--brand-300, #A0B8D9);
+  --principle-brand-500: var(--brand-500, #4775BC);
+  --principle-brand-600: var(--brand-600, #3561A8);
+  --principle-brand-700: var(--brand-700, #284C91);
+  --principle-text: var(--text-primary, #172033);
+  --principle-muted: var(--text-secondary, #566176);
+  --principle-border: var(--border, #E1E6EE);
+  --principle-surface: var(--bg-surface, #FFFFFF);
+}
+
+body {
+  background: var(--bg-page, #F7F9FC);
+  color: var(--principle-text);
+}
+
+.principle-page {
+  max-width: 820px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background: var(--principle-surface);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  line-height: 1.95;
+}
+
+.principle-breadcrumb {
+  display: flex;
+  gap: .55rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 1.4rem;
+  font-size: .95rem;
+}
+
+.principle-breadcrumb a {
+  color: var(--principle-brand-600);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.principle-breadcrumb a:hover {
+  text-decoration: underline;
+}
+
+.principle-page h1 {
+  font-size: clamp(1.9rem, 4vw, 2.4rem);
+  font-weight: 800;
+  color: var(--principle-brand-700);
+  border-bottom: 3px solid var(--principle-brand-100);
+  padding-bottom: .8rem;
+  margin: 0 0 2rem;
+  line-height: 1.5;
+}
+
+.principle-page h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--principle-brand-600);
+  margin-top: 2.2rem;
+  margin-bottom: .8rem;
+  line-height: 1.6;
+}
+
+.principle-page h3 {
+  color: var(--principle-brand-700);
+  line-height: 1.6;
+}
+
+.principle-page p,
+.principle-page li {
+  font-size: 1.05rem;
+}
+
+.principle-page p {
+  color: var(--principle-text);
+  margin-bottom: 1.2rem;
+}
+
+.principle-page ul {
+  padding-right: 1.5rem;
+  color: var(--principle-muted);
+}
+
+.principle-page li {
+  margin-bottom: .55rem;
+}
+
+.principle-page blockquote {
+  border-right: 4px solid var(--principle-brand-500);
+  margin: 1.5rem 0;
+  color: var(--principle-muted);
+  background: var(--principle-brand-50);
+  padding: 1rem 1.5rem;
+  border-radius: 8px;
+}
+
+.test-box {
+  background: var(--principle-brand-50);
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  margin: 2rem 0;
+  border: 1px solid var(--principle-border);
+}
+
+.test-box strong {
+  color: var(--principle-brand-700);
+}
+
+.result-box {
+  background: var(--principle-brand-600);
+  color: #fff;
+  padding: 1.2rem 2rem;
+  border-radius: 12px;
+  margin-top: 2rem;
+}
+
+.result-box p,
+.result-box strong {
+  color: #fff;
+}
+
+.thinking {
+  margin-top: 2.5rem;
+  background: #F8FAFF;
+  border-radius: 12px;
+  padding: 1.5rem 2rem;
+  border: 1px dashed var(--principle-brand-300);
+}
+
+.thinking h3 {
+  margin-top: 0;
+  margin-bottom: .65rem;
+}
+
+.thinking ul {
+  margin-bottom: 0;
+}
+
+.nav-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--principle-border);
+  flex-wrap: wrap;
+}
+
+.nav-links a {
+  text-decoration: none;
+  font-weight: 700;
+  color: var(--principle-brand-600);
+  padding: .6rem 1.2rem;
+  border-radius: 8px;
+  transition: background .2s ease, transform .2s ease;
+}
+
+.nav-links a:hover,
+.nav-links a:focus-visible {
+  background: var(--principle-brand-100);
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.nav-links .next {
+  background: var(--principle-brand-600);
+  color: #fff;
+}
+
+.nav-links .next:hover,
+.nav-links .next:focus-visible {
+  background: var(--principle-brand-700);
+}
+
+.nav-links .prev {
+  background: #F5F0E8;
+}
+
+.end-nav {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.end-nav a {
+  display: inline-block;
+  background: var(--principle-brand-600);
+  color: #fff;
+  padding: .7rem 2rem;
+  border-radius: 999px;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.end-nav a:hover,
+.end-nav a:focus-visible {
+  background: var(--principle-brand-700);
+  outline: none;
+}
+
+@media (max-width: 700px) {
+  .principle-page {
+    margin: 0;
+    padding: 1.25rem;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .test-box,
+  .thinking,
+  .result-box {
+    padding: 1.2rem;
+  }
+
+  .nav-links {
+    align-items: stretch;
+  }
+
+  .nav-links a {
+    text-align: center;
+    flex: 1 1 100%;
+  }
+}
+/* =========================================================
+   NAZM DAD — THREE PRINCIPLES / HOME PAGE
+   ========================================================= */
+
+#principles {
+    padding: 72px 0;
+}
+
+#principles .container {
+    width: min(1180px, calc(100% - 40px));
+    margin: 0 auto;
+}
+
+#principles .section-kicker {
+    text-align: center;
+    margin: 0 0 10px;
+    color: #6b7890;
+    font-size: 0.95rem;
+}
+
+#principles #principles-title {
+    text-align: center;
+    margin: 0 0 36px;
+    color: #314d7b;
+    font-size: clamp(1.7rem, 3vw, 2.4rem);
+}
+
+#principles .principles-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 20px;
+    align-items: start;
+}
+
+#principles .principle-item {
+    display: block;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    border: 1px solid #dfe5ee;
+    border-radius: 18px;
+    background: #ffffff;
+    overflow: hidden;
+    box-shadow: 0 5px 18px rgba(32, 58, 96, 0.05);
+}
+
+#principles .principle-item summary {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    min-height: 105px;
+    padding: 24px 22px;
+    cursor: pointer;
+    list-style: none;
+    color: #344d75;
+    line-height: 1.8;
+    font-size: 1.02rem;
+    font-weight: 700;
+}
+
+#principles .principle-item summary::-webkit-details-marker {
+    display: none;
+}
+
+#principles .principle-item summary::after {
+    content: "⌄";
+    margin-right: auto;
+    font-size: 1rem;
+    color: #637793;
+    transition: transform .2s ease;
+}
+
+#principles .principle-item[open] summary::after {
+    transform: rotate(180deg);
+}
+
+#principles .principle-number {
+    flex: 0 0 auto;
+    color: #7a8ba5;
+}
+
+#principles .principle-content {
+    padding: 4px 22px 26px;
+    border-top: 1px solid #edf0f5;
+    color: #59677b;
+    line-height: 2;
+}
+
+#principles .principle-content h3 {
+    margin: 18px 0 10px;
+    color: #314d7b;
+    font-size: 1.15rem;
+    line-height: 1.7;
+}
+
+#principles .principle-content p {
+    margin: 0 0 14px;
+}
+
+#principles .principle-content strong {
+    color: #314d7b;
+}
+
+#principles .principle-item[open] {
+    box-shadow: 0 10px 30px rgba(32, 58, 96, 0.09);
+}
+
+/* Tablet */
+@media (max-width: 900px) {
+    #principles .principles-grid {
+        grid-template-columns: 1fr;
+    }
+
+    #principles .principle-item summary {
+        min-height: auto;
+    }
+}
+
+/* Mobile */
+@media (max-width: 560px) {
+    #principles {
+        padding: 48px 0;
+    }
+
+    #principles .container {
+        width: min(100% - 24px, 1180px);
+    }
+
+    #principles .principle-item summary {
+        padding: 20px 18px;
+    }
+
+    #principles .principle-content {
+        padding: 2px 18px 22px;
+    }
+}
+
