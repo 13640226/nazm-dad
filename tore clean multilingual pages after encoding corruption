@@ -1,0 +1,63 @@
+[1mdiff --git a/principle-3.html b/principle-3.html[m
+[1mindex 1917eb2..bfc3fec 100644[m
+[1m--- a/principle-3.html[m
+[1m+++ b/principle-3.html[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-﻿<!DOCTYPE html>[m
+[32m+[m[32m<!DOCTYPE html>[m
+ <html lang="fa" dir="rtl">[m
+ [m
+ <head>[m
+[36m@@ -18,31 +18,31 @@[m
+ [m
+   <link[m
+     rel="canonical"[m
+[31m-    href="https://nazm-dad.org/principle-3.html"[m
+[32m+[m[32m    href="https://13640226.github.io/nazm-dad/principle-3.html"[m
+   />[m
+ [m
+   <link[m
+     rel="alternate"[m
+     hreflang="fa"[m
+[31m-    href="https://nazm-dad.org/principle-3.html"[m
+[32m+[m[32m    href="https://13640226.github.io/nazm-dad/principle-3.html"[m
+   />[m
+ [m
+   <link[m
+     rel="alternate"[m
+     hreflang="en"[m
+[31m-    href="https://nazm-dad.org/en/principle-3.html"[m
+[32m+[m[32m    href="https://13640226.github.io/nazm-dad/en/principle-3.html"[m
+   />[m
+ [m
+   <link[m
+     rel="alternate"[m
+     hreflang="de"[m
+[31m-    href="https://nazm-dad.org/de/principle-3.html"[m
+[32m+[m[32m    href="https://13640226.github.io/nazm-dad/de/principle-3.html"[m
+   />[m
+ [m
+   <link[m
+     rel="alternate"[m
+     hreflang="x-default"[m
+[31m-    href="https://nazm-dad.org/principle-3.html"[m
+[32m+[m[32m    href="https://13640226.github.io/nazm-dad/principle-3.html"[m
+   />[m
+ [m
+   <meta[m
+[36m@@ -62,7 +62,7 @@[m
+ [m
+   <meta[m
+     property="og:url"[m
+[31m-    content="https://nazm-dad.org/principle-3.html"[m
+[32m+[m[32m    content="https://13640226.github.io/nazm-dad/principle-3.html"[m
+   />[m
+ [m
+   <meta[m
+[36m@@ -370,4 +370,4 @@[m
+   </main>[m
+ [m
+ </body>[m
+[31m-</html>[m
+[32m+[m[32m</html>[m
+\ No newline at end of file[m
