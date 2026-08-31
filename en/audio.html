@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Audio Library | NAZM DAD</title>
+
+  <meta
+    name="description"
+    content="Selected audio editions and recordings from NAZM DAD on constitutional principles, institutional design, rights, public power, and accountability."
+  />
+
+  <link
+    rel="canonical"
+    href="https://13640226.github.io/nazm-dad/en/audio.html"
+  />
+
+  <meta property="og:title" content="Audio Library | NAZM DAD" />
+
+  <meta
+    property="og:description"
+    content="Listen to selected recordings on constitutional philosophy, rights, institutional accountability, and public power."
+  />
+
+  <meta property="og:type" content="website" />
+
+  <meta
+    property="og:url"
+    content="https://13640226.github.io/nazm-dad/en/audio.html"
+  />
+
+  <meta property="og:site_name" content="NAZM DAD" />
+
+  <link
+    rel="alternate"
+    hreflang="fa"
+    href="https://13640226.github.io/nazm-dad/audio.html"
+  />
+
+  <link
+    rel="alternate"
+    hreflang="en"
+    href="https://13640226.github.io/nazm-dad/en/audio.html"
+  />
+
+  <link
+    rel="alternate"
+    hreflang="de"
+    href="https://13640226.github.io/nazm-dad/de/audio.html"
+  />
+
+  <link
+    rel="alternate"
+    hreflang="x-default"
+    href="https://13640226.github.io/nazm-dad/audio.html"
+  />
+
+  <link rel="stylesheet" href="../assets/css/tokens.css" />
+  <link rel="stylesheet" href="../assets/css/base.css" />
+  <link rel="stylesheet" href="../assets/css/components.css" />
+  <link rel="stylesheet" href="../assets/css/principles.css" />
+
+  <style>
+    .audio-section {
+      padding: 60px 0;
+    }
+
+    .audio-section:first-of-type {
+      padding-top: 40px;
+    }
+
+    .audio-intro {
+      max-width: 780px;
+      margin-bottom: 2rem;
+    }
+
+    .audio-intro h1 {
+      font-size: 2.3rem;
+      color: var(--brand-700, #284C91);
+      margin-bottom: 0.75rem;
+    }
+
+    .audio-intro p {
+      font-size: 1.05rem;
+      color: var(--text-secondary, #566176);
+      line-height: 1.8;
+      margin-bottom: 1rem;
+    }
+
+    .lang-note {
+      background: var(--bg-soft, #f5f7fa);
+      border: 1px solid var(--border, #E1E6EE);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      margin-top: 1rem;
+      color: var(--text-muted, #737D8F);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .lang-note strong {
+      color: var(--text-primary, #172033);
+    }
+
+    .audio-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 24px;
+      margin-top: 2rem;
+    }
+
+    .audio-card {
+      background: var(--bg-surface, #ffffff);
+      border: 1px solid var(--border, #E1E6EE);
+      border-radius: var(--radius, 16px);
+      padding: 1.5rem 1.8rem;
+      transition:
+        box-shadow 0.2s ease,
+        transform 0.2s ease,
+        border-color 0.2s ease;
+    }
+
+    .audio-card:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+      transform: translateY(-3px);
+      border-color: var(--brand-200, #CBD8ED);
+    }
+
+    .audio-card .badge {
+      display: inline-block;
+      margin-bottom: 0.8rem;
+      padding: 0.2rem 0.7rem;
+      border-radius: 20px;
+
+      background: var(--bg-soft, #f5f7fa);
+      color: var(--text-muted, #737D8F);
+
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .audio-card h2,
+    .audio-card h3 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--brand-700, #284C91);
+      margin-bottom: 0.5rem;
+    }
+
+    .audio-card p {
+      font-size: 0.95rem;
+      color: var(--text-secondary, #566176);
+      line-height: 1.7;
+      margin-bottom: 0.9rem;
+    }
+
+    .audio-card .link {
+      font-weight: 600;
+      color: var(--brand-600, #3561A8);
+      text-decoration: none;
+    }
+
+    .audio-card .link:hover,
+    .audio-card .link:focus-visible {
+      text-decoration: underline;
+    }
+
+    @media (max-width: 720px) {
+      .audio-section {
+        padding: 40px 0;
+      }
+
+      .audio-intro h1 {
+        font-size: 1.9rem;
+      }
+
+      .audio-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      .site-header,
+      .site-footer,
+      .language-switcher {
+        display: none !important;
+      }
+
+      .audio-section {
+        padding: 0 !important;
+      }
+
+      .audio-card {
+        break-inside: avoid-page;
+        box-shadow: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- =========================================================
+       HEADER
+  ========================================================== -->
+
+  <header class="site-header" role="banner">
+    <div class="container header-inner">
+
+      <a
+        class="brand"
+        href="./index.html"
+        aria-label="NAZM DAD home"
+      >
+        <img
+          src="../assets/images/logo.svg"
+          alt="NAZM DAD mark"
+          onerror="this.style.display='none'"
+        />
+
+        <span class="brand-text">
+          <strong>NAZM DAD</strong>
+          <span>CONSTITUTIONAL FRAMEWORK</span>
+        </span>
+      </a>
+
+      <nav class="main-nav" aria-label="Main navigation">
+
+        <a href="./index.html">
+          Home
+        </a>
+
+        <a href="./library.html">
+          Library
+        </a>
+
+        <a
+          href="./audio.html"
+          class="active"
+          aria-current="page"
+        >
+          Audio
+        </a>
+
+        <a href="./index.html#principles">
+          Principles
+        </a>
+
+        <a href="./about.html">
+          About
+        </a>
+
+      </nav>
+
+      <nav
+        class="language-switcher"
+        aria-label="Language selector"
+      >
+
+        <a
+          href="../audio.html"
+          lang="fa"
+          dir="rtl"
+        >
+          FA
+        </a>
+
+        <a
+          href="./audio.html"
+          lang="en"
+          aria-current="true"
+        >
+          EN
+        </a>
+
+        <a
+          href="../de/audio.html"
+          lang="de"
+        >
+          DE
+        </a>
+
+      </nav>
+
+    </div>
+  </header>
+
+  <!-- =========================================================
+       MAIN
+  ========================================================== -->
+
+  <main id="main-content">
+
+    <section class="container audio-section">
+
+      <!-- =========================================================
+           INTRO
+      ========================================================== -->
+
+      <header class="audio-intro">
+
+        <h1>Audio Library</h1>
+
+        <p>
+          Selected audio editions and recordings from NAZM DAD
+          on constitutional principles,
+          institutional design,
+          rights,
+          public power,
+          and accountability.
+        </p>
+
+        <p>
+          The audio library is intended as a complementary way
+          to study the framework through listening,
+          reflection,
+          and accessible learning formats.
+        </p>
+
+        <div class="lang-note">
+          <strong>Current language availability:</strong>
+          Persian (فارسی).
+          English and German recordings will be added
+          as new editions become available.
+        </div>
+
+      </header>
+
+      <!-- =========================================================
+           AUDIO GRID
+      ========================================================== -->
+
+      <div class="audio-grid">
+
+        <!-- =====================================================
+             LIMITS OF POWER
+        ====================================================== -->
+
+        <article class="audio-card">
+
+          <span class="badge">
+            Constitutional Principles
+          </span>
+
+          <h2>
+            On the Limits of Public Power
+          </h2>
+
+          <p>
+            Discussions on why legitimate public power
+            must be structurally limited,
+            legally defined,
+            and subject to effective oversight.
+          </p>
+
+          <a
+            class="link"
+            href="../audio.html"
+            hreflang="fa"
+          >
+            Listen in Persian →
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             INSTITUTIONAL DESIGN
+        ====================================================== -->
+
+        <article class="audio-card">
+
+          <span class="badge">
+            Institutional Design
+          </span>
+
+          <h2>
+            Institutional Architecture and Accountability
+          </h2>
+
+          <p>
+            Explorations of how institutional structures
+            can reduce concentration of power,
+            establish checks,
+            and create meaningful forms of accountability.
+          </p>
+
+          <a
+            class="link"
+            href="../audio.html"
+            hreflang="fa"
+          >
+            Listen in Persian →
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             RIGHTS
+        ====================================================== -->
+
+        <article class="audio-card">
+
+          <span class="badge">
+            Rights and Guarantees
+          </span>
+
+          <h2>
+            Effective Rights and Remedies
+          </h2>
+
+          <p>
+            Reflections on the difference
+            between rights formally declared in law
+            and rights that can actually be invoked,
+            defended,
+            enforced,
+            and remedied.
+          </p>
+
+          <a
+            class="link"
+            href="../audio.html"
+            hreflang="fa"
+          >
+            Listen in Persian →
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             ACCOUNTABILITY
+        ====================================================== -->
+
+        <article class="audio-card">
+
+          <span class="badge">
+            Accountability
+          </span>
+
+          <h2>
+            Institutional Accountability and Oversight
+          </h2>
+
+          <p>
+            Discussions of independent review,
+            transparency,
+            reason-giving,
+            institutional correction,
+            and accountability mechanisms.
+          </p>
+
+          <a
+            class="link"
+            href="../audio.html"
+            hreflang="fa"
+          >
+            Listen in Persian →
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             CONSTITUTIONAL PHILOSOPHY
+        ====================================================== -->
+
+        <article class="audio-card">
+
+          <span class="badge">
+            Constitutional Philosophy
+          </span>
+
+          <h2>
+            Freedom Through Institutional Structure
+          </h2>
+
+          <p>
+            Reflections on the proposition
+            that freedom and justice should not depend
+            on the personality or goodwill of those who govern,
+            but on the design of institutions themselves.
+          </p>
+
+          <a
+            class="link"
+            href="../audio.html"
+            hreflang="fa"
+          >
+            Listen in Persian →
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             RULE OF LAW
+        ====================================================== -->
+
+        <article class="audio-card">
+
+          <span class="badge">
+            Rule of Law
+          </span>
+
+          <h2>
+            Law, Competence, and Institutional Limits
+          </h2>
+
+          <p>
+            Discussions on legal competence,
+            predictable rules,
+            review mechanisms,
+            and the relationship between authority and law.
+          </p>
+
+          <a
+            class="link"
+            href="../audio.html"
+            hreflang="fa"
+          >
+            Listen in Persian →
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             RESEARCH COMMENTARY
+        ====================================================== -->
+
+        <article class="audio-card">
+
+          <span class="badge">
+            Research and Commentary
+          </span>
+
+          <h2>
+            Constitutional Design and Public Authority
+          </h2>
+
+          <p>
+            Commentary on constitutional design,
+            public authority,
+            institutional safeguards,
+            accountability,
+            and comparative legal questions.
+          </p>
+
+          <a
+            class="link"
+            href="../audio.html"
+            hreflang="fa"
+          >
+            Listen in Persian →
+          </a>
+
+        </article>
+
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- =========================================================
+       FOOTER
+  ========================================================== -->
+
+  <footer
+    class="site-footer"
+    role="contentinfo"
+  >
+
+    <div class="container footer-inner">
+
+      <span>
+        © NAZM DAD
+      </span>
+
+      <div class="footer-links">
+
+        <a href="./index.html">
+          Home
+        </a>
+
+        <a href="./library.html">
+          Library
+        </a>
+
+        <a href="./audio.html">
+          Audio
+        </a>
+
+        <a href="./about.html">
+          About
+        </a>
+
+        <a href="./index.html#principles">
+          Principles
+        </a>
+
+        <a
+          href="../audio.html"
+          hreflang="fa"
+          lang="fa"
+          dir="rtl"
+        >
+          فارسی
+        </a>
+
+        <a
+          href="../de/audio.html"
+          hreflang="de"
+          lang="de"
+        >
+          Deutsch
+        </a>
+
+      </div>
+
+    </div>
+
+  </footer>
+
+</body>
+</html>
