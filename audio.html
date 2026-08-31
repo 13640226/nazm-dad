@@ -1,21 +1,119 @@
 ﻿<!doctype html>
 <html lang="fa" dir="rtl">
+
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  >
 
   <title>کتابخانه صوتی | نظم داد</title>
 
-  <link rel="stylesheet" href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/tokens.css">
-  <link rel="stylesheet" href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/base.css">
-  <link rel="stylesheet" href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/components.css">
-  <link rel="stylesheet" href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/library.css">
+  <meta
+    name="description"
+    content="کتابخانه صوتی نظم داد برای دسترسی به محتوای صوتی، نمونه‌های آزمایشی و فایل‌های رسانه‌ای پروژه."
+  >
+
+  <link
+    rel="canonical"
+    href="https://nazm-dad.org/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="fa"
+    href="https://nazm-dad.org/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="en"
+    href="https://nazm-dad.org/en/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="de"
+    href="https://nazm-dad.org/de/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="x-default"
+    href="https://nazm-dad.org/audio.html"
+  >
+
+  <meta
+    property="og:title"
+    content="کتابخانه صوتی | نظم داد"
+  >
+
+  <meta
+    property="og:description"
+    content="کتابخانه صوتی نظم داد برای دسترسی به محتوای صوتی و رسانه‌ای پروژه."
+  >
+
+  <meta
+    property="og:type"
+    content="website"
+  >
+
+  <meta
+    property="og:url"
+    content="https://nazm-dad.org/audio.html"
+  >
+
+  <meta
+    property="og:site_name"
+    content="NAZM DAD"
+  >
+
+  <link
+    rel="stylesheet"
+    href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/tokens.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/base.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/components.css"
+  >
+
+  <link
+    rel="stylesheet"
+    href="../nazm-dad-release-final/nazm-dad-vnext/assets/css/library.css"
+  >
 
   <style>
     .audio-shell {
       max-width: 1100px;
       margin: 0 auto;
       padding: 32px 20px 64px;
+    }
+
+    .language-switcher {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 28px;
+      direction: ltr;
+    }
+
+    .language-switcher a {
+      display: inline-block;
+      padding: 7px 12px;
+      border: 1px solid rgba(40, 70, 110, .18);
+      border-radius: 10px;
+      text-decoration: none;
+    }
+
+    .language-switcher a[aria-current="page"] {
+      font-weight: 700;
     }
 
     .audio-header {
@@ -34,17 +132,20 @@
 
     .audio-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      grid-template-columns: repeat(
+        auto-fit,
+        minmax(260px, 1fr)
+      );
       gap: 18px;
       margin-top: 28px;
     }
 
     .audio-card {
-      border: 1px solid rgba(40,70,110,.18);
+      border: 1px solid rgba(40, 70, 110, .18);
       border-radius: 18px;
       padding: 18px;
-      background: rgba(255,255,255,.82);
-      box-shadow: 0 8px 24px rgba(30,60,100,.08);
+      background: rgba(255, 255, 255, .82);
+      box-shadow: 0 8px 24px rgba(30, 60, 100, .08);
     }
 
     .audio-card h2 {
@@ -71,7 +172,7 @@
       margin-top: 30px;
       padding: 16px 18px;
       border-radius: 14px;
-      background: rgba(60,100,180,.08);
+      background: rgba(60, 100, 180, .08);
     }
   </style>
 </head>
@@ -80,32 +181,80 @@
 
   <main class="audio-shell">
 
+    <nav
+      class="language-switcher"
+      aria-label="انتخاب زبان"
+    >
+      <a
+        href="./audio.html"
+        lang="fa"
+        hreflang="fa"
+        dir="rtl"
+        aria-current="page"
+      >
+        فارسی
+      </a>
+
+      <a
+        href="./en/audio.html"
+        lang="en"
+        hreflang="en"
+      >
+        English
+      </a>
+
+      <a
+        href="./de/audio.html"
+        lang="de"
+        hreflang="de"
+      >
+        Deutsch
+      </a>
+    </nav>
+
     <header class="audio-header">
-      <h1 class="audio-title">کتابخانه صوتی</h1>
+
+      <h1 class="audio-title">
+        کتابخانه صوتی
+      </h1>
+
       <p class="audio-subtitle">
         نسخه آزمایشی کتابخانه صوتی نظم داد
       </p>
+
     </header>
 
     <section class="audio-grid">
 
-      <article class="audio-card" data-audio-card>
-        <h2>نمونه صوتی</h2>
+      <article
+        class="audio-card"
+        data-audio-card
+      >
+
+        <h2>
+          نمونه صوتی
+        </h2>
 
         <p>
-          این فایل فقط برای آزمایش Player و مسیرهای فایل استفاده می‌شود.
+          این فایل فقط برای آزمایش Player و مسیرهای فایل
+          استفاده می‌شود.
         </p>
 
         <audio
           class="audio-player"
           controls
           preload="metadata"
-          src="../nazm-dad-release-final/nazm-dad-vnext/assets/media/audio/sample.mp3">
+          src="../nazm-dad-release-final/nazm-dad-vnext/assets/media/audio/sample.mp3"
+        >
         </audio>
 
-        <div class="audio-status" data-audio-status>
+        <div
+          class="audio-status"
+          data-audio-status
+        >
           آماده پخش
         </div>
+
       </article>
 
     </section>
@@ -117,5 +266,6 @@
   </main>
 
   <script src="./audio-player-standalone.js"></script>
+
 </body>
 </html>

@@ -1,0 +1,683 @@
+﻿<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Library | NAZM DAD</title>
+
+  <meta
+    name="description"
+    content="The NAZM DAD library brings together constitutional documents, legal frameworks, research materials, and audio resources on institutional design, rights, public power, and accountability."
+  />
+
+  <link
+    rel="canonical"
+    href="https://nazm-dad.org/en/library.html"
+  />
+
+  <meta property="og:title" content="Library | NAZM DAD" />
+
+  <meta
+    property="og:description"
+    content="Constitutional documents, institutional analysis, legal frameworks, and research materials on limited public power, effective rights, and accountability."
+  />
+
+  <meta property="og:type" content="website" />
+
+  <meta
+    property="og:url"
+    content="https://nazm-dad.org/en/library.html"
+  />
+
+  <meta property="og:site_name" content="NAZM DAD" />
+
+  <link
+    rel="alternate"
+    hreflang="fa"
+    href="https://nazm-dad.org/library.html"
+  />
+
+  <link
+    rel="alternate"
+    hreflang="en"
+    href="https://nazm-dad.org/en/library.html"
+  />
+
+  <link
+    rel="alternate"
+    hreflang="de"
+    href="https://nazm-dad.org/de/library.html"
+  />
+
+  <link
+    rel="alternate"
+    hreflang="x-default"
+    href="https://nazm-dad.org/library.html"
+  />
+
+  <link rel="stylesheet" href="../assets/css/tokens.css" />
+  <link rel="stylesheet" href="../assets/css/base.css" />
+  <link rel="stylesheet" href="../assets/css/components.css" />
+  <link rel="stylesheet" href="../assets/css/principles.css" />
+
+  <style>
+    .library-section {
+      padding: 60px 0;
+    }
+
+    .library-section:first-of-type {
+      padding-top: 40px;
+    }
+
+    .library-intro {
+      max-width: 780px;
+      margin-bottom: 2rem;
+    }
+
+    .library-intro h1 {
+      font-size: 2.3rem;
+      color: var(--brand-700, #284C91);
+      margin-bottom: 0.75rem;
+    }
+
+    .library-intro p {
+      font-size: 1.05rem;
+      color: var(--text-secondary, #566176);
+      line-height: 1.8;
+      margin-bottom: 1rem;
+    }
+
+    .library-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 24px;
+      margin-top: 2rem;
+    }
+
+    .library-card {
+      background: var(--bg-surface, #ffffff);
+      border: 1px solid var(--border, #E1E6EE);
+      border-radius: var(--radius, 16px);
+      padding: 1.5rem 1.8rem;
+      transition:
+        box-shadow 0.2s ease,
+        transform 0.2s ease,
+        border-color 0.2s ease;
+    }
+
+    .library-card:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+      transform: translateY(-3px);
+      border-color: var(--brand-200, #CBD8ED);
+    }
+
+    .library-card .badge {
+      display: inline-block;
+      margin-bottom: 0.8rem;
+      padding: 0.2rem 0.7rem;
+      border-radius: 20px;
+
+      background: var(--bg-soft, #f5f7fa);
+      color: var(--text-muted, #737D8F);
+
+      font-size: 0.7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .library-card h2,
+    .library-card h3 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--brand-700, #284C91);
+      margin-bottom: 0.5rem;
+    }
+
+    .library-card p {
+      font-size: 0.95rem;
+      color: var(--text-secondary, #566176);
+      line-height: 1.7;
+      margin-bottom: 0.9rem;
+    }
+
+    .library-card .link {
+      font-weight: 600;
+      color: var(--brand-600, #3561A8);
+      text-decoration: none;
+    }
+
+    .library-card .link:hover,
+    .library-card .link:focus-visible {
+      text-decoration: underline;
+    }
+
+    .library-note {
+      margin-top: 3rem;
+      padding: 1.25rem 1.5rem;
+
+      background: var(--bg-soft, #f5f7fa);
+      border: 1px solid var(--border, #E1E6EE);
+      border-radius: 10px;
+
+      color: var(--text-secondary, #566176);
+      line-height: 1.7;
+    }
+
+    .library-note strong {
+      color: var(--text-primary, #172033);
+    }
+
+    @media (max-width: 720px) {
+      .library-section {
+        padding: 40px 0;
+      }
+
+      .library-intro h1 {
+        font-size: 1.9rem;
+      }
+
+      .library-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media print {
+      .site-header,
+      .site-footer,
+      .language-switcher {
+        display: none !important;
+      }
+
+      .library-section {
+        padding: 0 !important;
+      }
+
+      .library-card {
+        break-inside: avoid-page;
+        box-shadow: none !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- =========================================================
+       HEADER
+  ========================================================== -->
+
+  <header class="site-header" role="banner">
+    <div class="container header-inner">
+
+      <a
+        class="brand"
+        href="./index.html"
+        aria-label="NAZM DAD home"
+      >
+        <img
+          src="../assets/images/logo.svg"
+          alt="NAZM DAD mark"
+          onerror="this.style.display='none'"
+        />
+
+        <span class="brand-text">
+          <strong>NAZM DAD</strong>
+          <span>CONSTITUTIONAL FRAMEWORK</span>
+        </span>
+      </a>
+
+      <nav class="main-nav" aria-label="Main navigation">
+        <a href="./index.html">Home</a>
+
+        <a
+          href="./library.html"
+          class="active"
+          aria-current="page"
+        >
+          Library
+        </a>
+
+        <a href="./audio.html">Audio</a>
+        <a href="./index.html#principles">Principles</a>
+        <a href="./about.html">About</a>
+      </nav>
+
+      <nav
+        class="language-switcher"
+        aria-label="Language selector"
+      >
+        <a
+          href="../library.html"
+          lang="fa"
+          dir="rtl"
+        >
+          FA
+        </a>
+
+        <a
+          href="./library.html"
+          lang="en"
+          aria-current="true"
+        >
+          EN
+        </a>
+
+        <a
+          href="../de/library.html"
+          lang="de"
+        >
+          DE
+        </a>
+      </nav>
+
+    </div>
+  </header>
+
+  <!-- =========================================================
+       MAIN
+  ========================================================== -->
+
+  <main id="main-content">
+
+    <section class="container library-section">
+
+      <!-- =========================================================
+           INTRO
+      ========================================================== -->
+
+      <header class="library-intro">
+
+        <h1>Library</h1>
+
+        <p>
+          The NAZM DAD library brings together constitutional documents,
+          legal frameworks, institutional analyses, and research materials
+          concerning the limits of public power,
+          the effective guarantee of rights,
+          and institutional accountability.
+        </p>
+
+        <p>
+          The library is intended to connect constitutional principles
+          with concrete institutional mechanisms,
+          comparative legal analysis,
+          and practical standards for evaluating public institutions.
+        </p>
+
+      </header>
+
+      <!-- =========================================================
+           LIBRARY GRID
+      ========================================================== -->
+
+      <div class="library-grid">
+
+        <!-- =====================================================
+             CORE DOCUMENTS
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Core Documents
+          </span>
+
+          <h2>
+            The Three Principles
+          </h2>
+
+          <p>
+            The foundational principles of NAZM DAD:
+            limits on power,
+            effective guarantees of rights,
+            and institutional accountability.
+          </p>
+
+          <a
+            class="link"
+            href="./index.html#principles"
+          >
+            Read the Principles â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             PRINCIPLE 1
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Public Power
+          </span>
+
+          <h2>
+            No Power Is Absolute
+          </h2>
+
+          <p>
+            An examination of legal competence,
+            institutional limits,
+            effective oversight,
+            challenge,
+            and mechanisms for restraining excesses of public power.
+          </p>
+
+          <a
+            class="link"
+            href="./principle-1.html"
+          >
+            Read Principle 1 â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             PRINCIPLE 2
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Rights
+          </span>
+
+          <h2>
+            Effective Rights and Guarantees
+          </h2>
+
+          <p>
+            A framework for understanding the difference
+            between formally declared rights
+            and rights that can actually be invoked,
+            defended, enforced, and remedied.
+          </p>
+
+          <a
+            class="link"
+            href="./principle-2.html"
+          >
+            Read Principle 2 â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             PRINCIPLE 3
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Accountability
+          </span>
+
+          <h2>
+            Institutional Accountability
+          </h2>
+
+          <p>
+            An institutional framework for questioning,
+            independent review,
+            reason-giving,
+            correction,
+            remedies,
+            and accountability of oversight bodies themselves.
+          </p>
+
+          <a
+            class="link"
+            href="./principle-3.html"
+          >
+            Read Principle 3 â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             INSTITUTIONAL DESIGN
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Research
+          </span>
+
+          <h2>
+            Institutional Design
+          </h2>
+
+          <p>
+            Research on separation and distribution of legal competences,
+            independent oversight,
+            judicial review,
+            institutional checks,
+            and structures that reduce the risk of concentrated power.
+          </p>
+
+          <a
+            class="link"
+            href="../library.html"
+            hreflang="fa"
+          >
+            View Current Materials in Persian â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             RULE OF LAW
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Reference
+          </span>
+
+          <h2>
+            Rule of Law and Constitutional Structure
+          </h2>
+
+          <p>
+            Comparative and explanatory materials
+            concerning legality,
+            predictability,
+            institutional competence,
+            limits on discretion,
+            and constitutional safeguards.
+          </p>
+
+          <a
+            class="link"
+            href="../library.html"
+            hreflang="fa"
+          >
+            Explore Current Materials â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             REMEDIES
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Rights Protection
+          </span>
+
+          <h2>
+            Remedies, Enforcement, and Redress
+          </h2>
+
+          <p>
+            Materials on effective remedies,
+            enforcement of rights,
+            access to independent review,
+            restoration,
+            compensation,
+            and other forms of legal redress.
+          </p>
+
+          <a
+            class="link"
+            href="./principle-2.html#section-2-5"
+          >
+            Explore the Framework â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             OVERSIGHT
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Oversight
+          </span>
+
+          <h2>
+            Independent Oversight and Review
+          </h2>
+
+          <p>
+            Materials on the design of oversight institutions,
+            review mechanisms,
+            access to information,
+            independence,
+            proportionality,
+            and institutional accountability.
+          </p>
+
+          <a
+            class="link"
+            href="./principle-3.html#section-3-5"
+          >
+            Explore Oversight Principles â†’
+          </a>
+
+        </article>
+
+        <!-- =====================================================
+             AUDIO
+        ====================================================== -->
+
+        <article class="library-card">
+
+          <span class="badge">
+            Audio
+          </span>
+
+          <h2>
+            Audio Library
+          </h2>
+
+          <p>
+            Audio editions and recordings
+            relating to constitutional philosophy,
+            institutional design,
+            public power,
+            rights,
+            and accountability.
+          </p>
+
+          <a
+            class="link"
+            href="./audio.html"
+          >
+            Open the Audio Library â†’
+          </a>
+
+        </article>
+
+      </div>
+
+      <!-- =========================================================
+           LANGUAGE NOTE
+      ========================================================== -->
+
+      <aside class="library-note">
+
+        <p>
+          <strong>Language availability:</strong>
+          some research materials are currently available only in Persian.
+          English and German editions will be added progressively
+          as translations are completed.
+        </p>
+
+      </aside>
+
+    </section>
+
+  </main>
+
+  <!-- =========================================================
+       FOOTER
+  ========================================================== -->
+
+  <footer
+    class="site-footer"
+    role="contentinfo"
+  >
+
+    <div class="container footer-inner">
+
+      <span>
+        Â© NAZM DAD
+      </span>
+
+      <div class="footer-links">
+
+        <a href="./index.html">
+          Home
+        </a>
+
+        <a href="./library.html">
+          Library
+        </a>
+
+        <a href="./audio.html">
+          Audio
+        </a>
+
+        <a href="./about.html">
+          About
+        </a>
+
+        <a href="./index.html#principles">
+          Principles
+        </a>
+
+        <a
+          href="../library.html"
+          hreflang="fa"
+          lang="fa"
+          dir="rtl"
+        >
+          ÙØ§Ø±Ø³ÛŒ
+        </a>
+
+        <a
+          href="../de/library.html"
+          hreflang="de"
+          lang="de"
+        >
+          Deutsch
+        </a>
+
+      </div>
+
+    </div>
+
+  </footer>
+
+</body>
+</html>
