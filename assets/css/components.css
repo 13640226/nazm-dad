@@ -1,1 +1,746 @@
-.site-header{position:sticky;top:0;z-index:100;background:rgba(250,247,240,.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border)}.header-inner{min-height:76px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{display:flex;align-items:center;gap:10px;text-decoration:none}.brand-logo-frame{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;background:var(--cream-card);border:1px solid var(--border)}.brand-copy{display:grid;line-height:1.15}.brand-copy strong{color:var(--navy);font-size:1.05rem}.brand-copy small{font-size:.67rem;color:var(--text-muted);letter-spacing:.12em}.main-nav,.header-nav{display:flex;align-items:center;gap:20px}.main-nav a,.header-nav a{text-decoration:none;color:var(--text-muted);font-weight:700;font-size:.93rem}.main-nav a:hover,.main-nav a.active,.header-nav a:hover,.header-nav a.active{color:var(--navy)}.nav-toggle{display:none}.btn{display:inline-flex;align-items:center;justify-content:center;gap:.45rem;border:1px solid transparent;border-radius:var(--radius-sm);padding:.72rem 1rem;text-decoration:none;cursor:pointer;font-weight:700;transition:transform var(--transition),background var(--transition),border-color var(--transition)}.btn:hover{transform:translateY(-1px)}.btn-primary{background:var(--navy);color:white}.btn-primary:hover{background:var(--navy-deep)}.btn-outline{background:transparent;border-color:var(--border);color:var(--navy)}.btn-outline:hover{border-color:var(--gold);background:var(--cream-soft)}.btn-sm{padding:.42rem .72rem;font-size:.82rem}.badge{display:inline-flex;padding:.15rem .55rem;border-radius:99px;background:var(--cream-soft);color:var(--text-muted);font-size:.73rem}.button-row{display:flex;gap:12px;flex-wrap:wrap}@media(max-width:780px){.main-nav{position:fixed;inset:76px 0 auto 0;background:var(--cream-card);padding:18px;display:none;flex-direction:column;align-items:stretch;border-bottom:1px solid var(--border)}.main-nav.is-open{display:flex}.nav-toggle{display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--border);background:var(--cream-card);border-radius:10px}.nav-toggle .icon-close{display:none}.nav-toggle[aria-expanded="true"] .icon-bars{display:none}.nav-toggle[aria-expanded="true"] .icon-close{display:inline}.header-nav{gap:12px}.header-nav a{font-size:.84rem}}
+/* =========================================================
+   NAZM DAD — GLOBAL COMPONENTS
+   Version: 2.2
+   Compact · Accessible · Responsive · Multilingual
+   ========================================================= */
+
+
+/* =========================================================
+   ACCESSIBILITY
+   ========================================================= */
+
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 50%;
+  z-index: 9999;
+
+  transform: translateX(-50%);
+
+  padding: 10px 16px;
+
+  background: var(--navy, #102a54);
+  color: #ffffff;
+
+  border-radius: 0 0 10px 10px;
+
+  text-decoration: none;
+  font-weight: 800;
+
+  transition: top 0.18s ease;
+}
+
+.skip-link:focus {
+  top: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--brand-600, #3561a8);
+  outline-offset: 3px;
+}
+
+
+/* =========================================================
+   SITE HEADER
+   ========================================================= */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+
+  background: rgba(255, 255, 255, 0.96);
+
+  border-bottom: 1px solid var(--border, #e2e8f0);
+
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+
+  transition:
+    box-shadow 0.2s ease,
+    background 0.2s ease;
+}
+
+.site-header.scrolled {
+  box-shadow: 0 7px 24px rgba(25, 48, 78, 0.07);
+}
+
+
+/* =========================================================
+   HEADER CONTAINER
+   ========================================================= */
+
+.header-inner {
+  min-height: 56px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  gap: 14px;
+}
+
+
+/* =========================================================
+   BRAND
+   ========================================================= */
+
+.brand {
+  display: flex;
+  align-items: center;
+
+  gap: 9px;
+
+  min-width: 0;
+  flex-shrink: 0;
+
+  color: var(--navy, #102a54);
+  text-decoration: none;
+}
+
+.brand img,
+.brand-logo {
+  width: 34px;
+  height: 34px;
+
+  object-fit: contain;
+
+  border-radius: 9px;
+
+  flex: 0 0 auto;
+}
+
+.brand-logo-frame {
+  width: 36px;
+  height: 36px;
+
+  display: grid;
+  place-items: center;
+
+  flex: 0 0 auto;
+
+  background: var(--cream-card, #ffffff);
+
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 9px;
+}
+
+.brand-logo-frame img {
+  width: 30px;
+  height: 30px;
+}
+
+.brand-fallback {
+  width: 34px;
+  height: 34px;
+
+  display: none;
+  align-items: center;
+  justify-content: center;
+
+  flex: 0 0 auto;
+
+  border-radius: 9px;
+
+  background: linear-gradient(
+    145deg,
+    #335f96,
+    #1e426c
+  );
+
+  color: #ffffff;
+
+  font-size: 0.88rem;
+  font-weight: 900;
+}
+
+
+/* =========================================================
+   BRAND TEXT
+   ========================================================= */
+
+.brand-copy,
+.brand-text {
+  display: grid;
+
+  min-width: 0;
+
+  line-height: 1.12;
+}
+
+.brand-copy strong,
+.brand-text strong {
+  display: block;
+
+  color: var(--navy, #102a54);
+
+  font-size: 0.96rem;
+  font-weight: 850;
+
+  white-space: nowrap;
+}
+
+.brand-copy small,
+.brand-copy span,
+.brand-text small,
+.brand-text span {
+  display: block;
+
+  margin-top: 2px;
+
+  color: var(--text-muted, #6b7585);
+
+  font-size: 0.62rem;
+  font-weight: 650;
+
+  letter-spacing: 0.05em;
+
+  white-space: nowrap;
+}
+
+
+/* =========================================================
+   MAIN NAVIGATION
+   ========================================================= */
+
+.main-nav,
+.header-nav {
+  display: flex;
+  align-items: center;
+
+  gap: 17px;
+}
+
+.main-nav a,
+.header-nav a {
+  position: relative;
+
+  display: inline-flex;
+  align-items: center;
+
+  min-height: 36px;
+
+  padding: 6px 0;
+
+  color: var(--text-muted, #697386);
+
+  text-decoration: none;
+
+  font-size: 0.86rem;
+  font-weight: 750;
+
+  white-space: nowrap;
+
+  transition:
+    color 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.main-nav a::after,
+.header-nav a::after {
+  content: "";
+
+  position: absolute;
+
+  right: 0;
+  left: 0;
+  bottom: 1px;
+
+  height: 2px;
+
+  border-radius: 999px;
+
+  background: var(--brand-600, #3561a8);
+
+  transform: scaleX(0);
+
+  transform-origin: center;
+
+  transition: transform 0.18s ease;
+}
+
+.main-nav a:hover,
+.main-nav a.active,
+.main-nav a[aria-current="page"],
+.header-nav a:hover,
+.header-nav a.active,
+.header-nav a[aria-current="page"] {
+  color: var(--navy, #102a54);
+}
+
+.main-nav a:hover::after,
+.main-nav a.active::after,
+.main-nav a[aria-current="page"]::after,
+.header-nav a:hover::after,
+.header-nav a.active::after,
+.header-nav a[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+
+
+/* =========================================================
+   LANGUAGE SWITCHER
+   ========================================================= */
+
+.language-switcher {
+  display: flex;
+  align-items: center;
+
+  gap: 3px;
+
+  direction: ltr;
+}
+
+.language-switcher a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  min-width: 33px;
+  height: 29px;
+
+  padding: 0 7px;
+
+  border: 1px solid transparent;
+  border-radius: 8px;
+
+  color: #5d6878;
+
+  text-decoration: none;
+
+  font-size: 0.75rem;
+  font-weight: 800;
+
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.language-switcher a:hover {
+  background: #f2f6fb;
+
+  border-color: #e1e8f2;
+
+  color: var(--brand-700, #284c91);
+}
+
+.language-switcher a[aria-current="true"],
+.language-switcher a[aria-current="page"] {
+  background: #edf3fd;
+
+  border-color: #d8e3f4;
+
+  color: var(--brand-700, #284c91);
+}
+
+
+/* =========================================================
+   MOBILE NAV TOGGLE
+   ========================================================= */
+
+.nav-toggle {
+  width: 36px;
+  height: 36px;
+
+  display: none;
+  align-items: center;
+  justify-content: center;
+
+  flex: 0 0 auto;
+
+  padding: 4px;
+
+  background: #ffffff;
+
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 9px;
+
+  color: var(--navy, #102a54);
+
+  cursor: pointer;
+
+  font-size: 1.18rem;
+  line-height: 1;
+}
+
+.nav-toggle:hover {
+  background: #f6f8fb;
+}
+
+.nav-toggle .icon-close {
+  display: none;
+}
+
+.nav-toggle[aria-expanded="true"] .icon-bars {
+  display: none;
+}
+
+.nav-toggle[aria-expanded="true"] .icon-close {
+  display: inline;
+}
+
+
+/* =========================================================
+   BUTTONS
+   ========================================================= */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  gap: 0.45rem;
+
+  min-height: 42px;
+
+  padding: 0.66rem 1rem;
+
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 10px);
+
+  text-decoration: none;
+
+  cursor: pointer;
+
+  font-weight: 750;
+
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--navy, #102a54);
+  color: #ffffff;
+}
+
+.btn-primary:hover {
+  background: var(--navy-deep, #0a1d3d);
+
+  box-shadow: 0 7px 18px rgba(16, 42, 84, 0.16);
+}
+
+.btn-secondary {
+  background: #f5f7fa;
+
+  border-color: var(--border, #dfe5ed);
+
+  color: var(--navy, #102a54);
+}
+
+.btn-secondary:hover {
+  background: #edf2f8;
+}
+
+.btn-outline {
+  background: transparent;
+
+  border-color: var(--border, #dfe5ed);
+
+  color: var(--navy, #102a54);
+}
+
+.btn-outline:hover {
+  background: var(--cream-soft, #f8f5ee);
+
+  border-color: var(--gold, #c6a86a);
+}
+
+.btn-sm {
+  min-height: 34px;
+
+  padding: 0.4rem 0.72rem;
+
+  font-size: 0.8rem;
+}
+
+
+/* =========================================================
+   BADGES
+   ========================================================= */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+
+  padding: 0.18rem 0.55rem;
+
+  border-radius: 999px;
+
+  background: var(--cream-soft, #f5f7fa);
+
+  color: var(--text-muted, #697386);
+
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+
+/* =========================================================
+   BUTTON ROW
+   ========================================================= */
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+
+  gap: 10px;
+}
+
+
+/* =========================================================
+   TABLET
+   ========================================================= */
+
+@media (max-width: 900px) {
+
+  .header-inner {
+    min-height: 54px;
+
+    gap: 11px;
+  }
+
+  .main-nav,
+  .header-nav {
+    gap: 11px;
+  }
+
+  .main-nav a,
+  .header-nav a {
+    font-size: 0.8rem;
+  }
+
+  .brand-copy small,
+  .brand-text small {
+    display: none;
+  }
+
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 720px) {
+
+  .header-inner {
+    min-height: 50px;
+
+    padding: 5px 0;
+
+    gap: 8px;
+
+    flex-wrap: wrap;
+  }
+
+
+  /* Brand */
+
+  .brand {
+    gap: 7px;
+  }
+
+  .brand img,
+  .brand-logo,
+  .brand-fallback {
+    width: 29px;
+    height: 29px;
+
+    border-radius: 8px;
+  }
+
+  .brand-logo-frame {
+    width: 31px;
+    height: 31px;
+
+    border-radius: 8px;
+  }
+
+  .brand-logo-frame img {
+    width: 27px;
+    height: 27px;
+  }
+
+  .brand-copy strong,
+  .brand-text strong {
+    font-size: 0.88rem;
+  }
+
+  .brand-copy span,
+  .brand-copy small,
+  .brand-text span,
+  .brand-text small {
+    display: none;
+  }
+
+
+  /* Toggle */
+
+  .nav-toggle {
+    display: inline-flex;
+  }
+
+
+  /* Mobile main navigation */
+
+  .main-nav {
+    order: 20;
+
+    display: none;
+
+    width: 100%;
+
+    flex-direction: column;
+    align-items: stretch;
+
+    gap: 0;
+
+    padding: 7px 0 10px;
+
+    border-top: 1px solid var(--border, #e5e9f0);
+  }
+
+  .main-nav.open,
+  .main-nav.is-open {
+    display: flex;
+  }
+
+  .main-nav a {
+    width: 100%;
+
+    min-height: 39px;
+
+    padding: 8px 5px;
+
+    border-bottom: 1px solid #f0f2f5;
+
+    font-size: 0.87rem;
+  }
+
+  .main-nav a:last-child {
+    border-bottom: 0;
+  }
+
+  .main-nav a::after {
+    display: none;
+  }
+
+
+  /* Header nav fallback */
+
+  .header-nav {
+    gap: 8px;
+  }
+
+  .header-nav a {
+    min-height: 32px;
+
+    font-size: 0.78rem;
+  }
+
+
+  /* Languages */
+
+  .language-switcher {
+    margin-inline-start: auto;
+
+    gap: 2px;
+  }
+
+  .language-switcher a {
+    min-width: 29px;
+    height: 27px;
+
+    padding: 0 5px;
+
+    font-size: 0.7rem;
+
+    border-radius: 7px;
+  }
+
+}
+
+
+/* =========================================================
+   VERY SMALL PHONES
+   ========================================================= */
+
+@media (max-width: 420px) {
+
+  .header-inner {
+    min-height: 48px;
+
+    padding: 4px 0;
+  }
+
+  .brand img,
+  .brand-logo,
+  .brand-fallback {
+    width: 27px;
+    height: 27px;
+  }
+
+  .brand-logo-frame {
+    width: 29px;
+    height: 29px;
+  }
+
+  .brand-logo-frame img {
+    width: 25px;
+    height: 25px;
+  }
+
+  .brand-copy strong,
+  .brand-text strong {
+    font-size: 0.84rem;
+  }
+
+  .nav-toggle {
+    width: 33px;
+    height: 33px;
+
+    font-size: 1.08rem;
+  }
+
+  .language-switcher a {
+    min-width: 27px;
+    height: 25px;
+
+    padding: 0 4px;
+
+    font-size: 0.67rem;
+  }
+
+}
+
+
+/* =========================================================
+   REDUCED MOTION
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+
+  .skip-link,
+  .site-header,
+  .main-nav a,
+  .main-nav a::after,
+  .header-nav a,
+  .header-nav a::after,
+  .language-switcher a,
+  .btn {
+    transition: none !important;
+  }
+
+  .btn:hover {
+    transform: none;
+  }
+
+}
