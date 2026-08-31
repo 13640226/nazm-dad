@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Audio | Nazm-Dad</title>
+
+  <meta
+    name="description"
+    content="Audiomaterialien von Nazm-Dad: gesprochene Fassungen, Aufnahmen und ergänzende Audioinhalte."
+  >
+
+  <link
+    rel="canonical"
+    href="https://nazm-dad.org/de/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="fa"
+    href="https://nazm-dad.org/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="en"
+    href="https://nazm-dad.org/en/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="de"
+    href="https://nazm-dad.org/de/audio.html"
+  >
+
+  <link
+    rel="alternate"
+    hreflang="x-default"
+    href="https://nazm-dad.org/en/audio.html"
+  >
+
+  <style>
+    :root {
+      --bg: #ffffff;
+      --text: #1f2933;
+      --muted: #5f6b76;
+      --border: #d8dee4;
+      --surface: #f7f8fa;
+      --link: #174ea6;
+      --max-width: 960px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        Helvetica,
+        Arial,
+        sans-serif;
+      line-height: 1.7;
+    }
+
+    a {
+      color: var(--link);
+      text-decoration: none;
+    }
+
+    a:hover,
+    a:focus {
+      text-decoration: underline;
+    }
+
+    .container {
+      width: min(100% - 32px, var(--max-width));
+      margin: 0 auto;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .header-inner {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      padding: 18px 0;
+    }
+
+    .site-title {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+    }
+
+    .site-title a {
+      color: var(--text);
+    }
+
+    .language-switcher {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 0.95rem;
+    }
+
+    .language-switcher a[aria-current="page"] {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    main {
+      padding: 48px 0 64px;
+    }
+
+    .intro {
+      max-width: 760px;
+      margin-bottom: 40px;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    h1 {
+      margin: 0 0 20px;
+      font-size: clamp(2rem, 5vw, 3rem);
+      line-height: 1.2;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 1.35rem;
+      line-height: 1.35;
+    }
+
+    p {
+      margin: 0 0 18px;
+    }
+
+    .lead {
+      font-size: 1.1rem;
+    }
+
+    .audio-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 20px;
+      margin-top: 32px;
+    }
+
+    .audio-card {
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .audio-card p {
+      color: var(--muted);
+    }
+
+    .audio-card p:last-child {
+      margin-bottom: 0;
+    }
+
+    .audio-card a {
+      font-weight: 600;
+    }
+
+    .notice {
+      margin-top: 32px;
+      padding: 20px 24px;
+      border-left: 4px solid var(--text);
+      background: var(--surface);
+    }
+
+    footer {
+      margin-top: 56px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .footer-inner {
+      padding: 28px 0;
+    }
+
+    .footer-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px;
+      margin-bottom: 20px;
+    }
+
+    .footer-languages {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      padding-top: 18px;
+      border-top: 1px solid var(--border);
+    }
+
+    .footer-languages a[aria-current="page"] {
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    @media (max-width: 700px) {
+      .header-inner {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .audio-grid {
+        grid-template-columns: 1fr;
+      }
+
+      main {
+        padding-top: 32px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div class="container header-inner">
+
+      <p class="site-title">
+        <a href="./index.html">
+          Nazm-Dad
+        </a>
+      </p>
+
+      <nav
+        class="language-switcher"
+        aria-label="Sprachauswahl"
+      >
+        <a
+          href="../audio.html"
+          hreflang="fa"
+          lang="fa"
+        >
+          فارسی
+        </a>
+
+        <a
+          href="../en/audio.html"
+          hreflang="en"
+          lang="en"
+        >
+          English
+        </a>
+
+        <a
+          href="./audio.html"
+          hreflang="de"
+          lang="de"
+          aria-current="page"
+        >
+          Deutsch
+        </a>
+      </nav>
+
+    </div>
+  </header>
+
+  <main class="container">
+
+    <section class="intro">
+
+      <p class="eyebrow">
+        Medien
+      </p>
+
+      <h1>
+        Audio
+      </h1>
+
+      <p class="lead">
+        Auf dieser Seite werden Audiomaterialien und gesprochene Fassungen
+        ausgewählter Inhalte von Nazm-Dad gesammelt.
+      </p>
+
+      <p>
+        Die Audioinhalte ergänzen die schriftlichen Texte und ermöglichen
+        einen weiteren Zugang zu den Prinzipien und Materialien des Projekts.
+      </p>
+
+    </section>
+
+    <section
+      class="audio-grid"
+      aria-label="Audioinhalte"
+    >
+
+      <article class="audio-card">
+
+        <h2>
+          Prinzip 1
+        </h2>
+
+        <p>
+          Gesprochene und ergänzende Audiomaterialien zum ersten Prinzip.
+        </p>
+
+        <p>
+          <a href="./principle-1.html">
+            Text von Prinzip 1 →
+          </a>
+        </p>
+
+      </article>
+
+      <article class="audio-card">
+
+        <h2>
+          Prinzip 2
+        </h2>
+
+        <p>
+          Gesprochene und ergänzende Audiomaterialien zum zweiten Prinzip.
+        </p>
+
+        <p>
+          <a href="./principle-2.html">
+            Text von Prinzip 2 →
+          </a>
+        </p>
+
+      </article>
+
+      <article class="audio-card">
+
+        <h2>
+          Prinzip 3
+        </h2>
+
+        <p>
+          Gesprochene und ergänzende Audiomaterialien zum dritten Prinzip.
+        </p>
+
+        <p>
+          <a href="./principle-3.html">
+            Text von Prinzip 3 →
+          </a>
+        </p>
+
+      </article>
+
+      <article class="audio-card">
+
+        <h2>
+          Bibliothek
+        </h2>
+
+        <p>
+          Weitere Texte und Materialien des Projekts finden Sie in der
+          Bibliothek.
+        </p>
+
+        <p>
+          <a href="./library.html">
+            Zur Bibliothek →
+          </a>
+        </p>
+
+      </article>
+
+    </section>
+
+    <div class="notice">
+      <p>
+        Weitere Audioaufnahmen können mit der Weiterentwicklung des Projekts
+        ergänzt werden.
+      </p>
+    </div>
+
+  </main>
+
+  <footer>
+
+    <div class="container footer-inner">
+
+      <nav
+        class="footer-nav"
+        aria-label="Seitennavigation"
+      >
+        <a href="./index.html">
+          Startseite
+        </a>
+
+        <a href="./library.html">
+          Bibliothek
+        </a>
+
+        <a href="./audio.html">
+          Audio
+        </a>
+
+        <a href="./about.html">
+          Über
+        </a>
+
+        <a href="./index.html#principles">
+          Prinzipien
+        </a>
+      </nav>
+
+      <div
+        class="footer-languages"
+        aria-label="Sprachen"
+      >
+
+        <a
+          href="../audio.html"
+          hreflang="fa"
+          lang="fa"
+          dir="rtl"
+        >
+          فارسی
+        </a>
+
+        <a
+          href="../en/audio.html"
+          hreflang="en"
+          lang="en"
+        >
+          English
+        </a>
+
+        <a
+          href="./audio.html"
+          hreflang="de"
+          lang="de"
+          aria-current="page"
+        >
+          Deutsch
+        </a>
+
+      </div>
+
+    </div>
+
+  </footer>
+
+</body>
+</html>
